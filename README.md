@@ -27,60 +27,60 @@
       same as create listener
 
 ## Listener
-### joinRoom (join the private chat)
-  data:
+  ### joinRoom (join the private chat automatically)
+    data:
     - same as create listener
     
 ## Listener
-### message
-  data:
-    - room (id of the private room)
-    - message (messsage text)
-    - from (loggedInUser object)
+  ### message
+    data:
+      - room (id of the private room)
+      - message (messsage text)
+      - from (loggedInUser object)
     
 ## Emitter
-### message
-  data:
-    same as message listener
+  ### message (emit new message to private room)
+    data:
+      same as message listener
     
     
 
 # Client Side Sockets
 
 ## Emitter
-### loggedin
-  data:
-    - login response data
+  ### loggedin (user logged in)
+    data:
+      - login response data
     
 ## Emitter
-### message
-  data:
-    - room (private room id)
-    - message (message text)
-    - from (logged in user object)
+  ### message (emit new message from private room)
+    data:
+      - room (private room id)
+      - message (message text)
+      - from (logged in user object)
     
 ## Emitter
-### create
-  data:
-    - room (private room id)
-    - userId (logged in user id)
-    - withUserId (receipient id)
+  ### create
+    data:
+      - room (private room id)
+      - userId (logged in user id)
+      - withUserId (receipient id)
 
 
 ## Listener
-### invite
-  data:
-    same received from server side create listener
+  ### invite (invite user to room)
+    data:
+      - same received from server side create listener
     
 ## Emitter
-### joinRoom
-  data:
-    received data in the invite listener
+  ### joinRoom (user and receipient has joined private room)
+    data:
+      - received data in the invite listener
     
 
 ## Listener
-### updateUserList
-  data:
-    - array of online users
+  ### updateUserList (online users list)
+    data:
+      - array of online users
     
 
