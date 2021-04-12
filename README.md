@@ -16,10 +16,10 @@
 
 ## Listener
   ### create (create private room for 1-1 chats)
-  data:
-    - room (generated string)
-    - withUserId (receipient id)
-    - userId (logged in user id)
+    data:
+      - room (generated string)
+      - withUserId (receipient id)
+      - userId (logged in user id)
     
 ## Emitter
   ### invite
