@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const { Types } = require('mongoose');
 
 const groupMessageSchema = new mongoose.Schema({
-  group_id: {
+  group: {
     type: Types.ObjectId,
     ref: 'Group'
   },
@@ -11,12 +11,12 @@ const groupMessageSchema = new mongoose.Schema({
     type: String,
     required: true
   },
-  sentBy: {
+  sent_by: {
     type: Types.ObjectId,
     ref: 'Participant',
     required: true
   },
-  sentDate: {
+  sent_date: {
     type: String,
     required: true
   }

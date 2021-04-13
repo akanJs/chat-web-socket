@@ -17,11 +17,18 @@ const login = () => {
                             ${resp.data.user_full_name}
                          </div>
                          `);
-                socket.emit('loggedin', resp.data);
+                socket.emit('loggedin', resp.data, function(err) {
+                    alert('An error occured');
+                    console.log(err);
+                });
                 return;
             }
 
             alert(resp.error);
+        },
+        error: (error) => {
+            alert('An error occured');
+            console.log(error);
         },
         dataType: "json",
         contentType: "application/json"
@@ -52,6 +59,28 @@ const sendMessage = (room) => {
     socket.emit('message', { room: room, message: message, from: loggedInUser });
     sendMyMessage(room, loggedInUser, message);
 };
+
+// Group Messages
+const sendGroupMessage = (group_id) => {
+    const user = JSON.parse(sessionStorage.getItem('user'));
+    const message = $('#groupMsgSendBtn').val().trim();
+
+    const data = {
+        sent_by: user._id,
+        message_text: message, 
+        group: group_id
+    };
+
+    socket.emit('newGroupMessage', data, function(err, responseData) {
+        if(err) {
+            alert('An error occured');
+            console.log(err);
+            return;
+        }
+        console.log('73: ', responseData);
+    });
+};
+
 
 // Open chat screen
 const openChatWindow = (room, username) => {
@@ -103,7 +132,7 @@ const openGroupWindow = (group_id, group_name, groupId) => {
                 <div id="participants-${group_id}"></div>
             </div>
             <div class="footer">
-                <input type="text" class="messageText"/><button>GO</button>
+                <input type="text" class="messageText" id="groupMsgSendBtn"/><button onclick="sendGroupMessage('${groupId}')">GO</button>
             </div>
         </div>
         `);
@@ -153,7 +182,7 @@ const createGroup = (userId) => {
         group_description: group_description.val().trim(),
         group_icon: ''
     };
-    socket.emit('createGroup', { roomDetails, user_id: userId }, function (err, responseData) {
+    socket.emit('create', { roomDetails, userId, isChannel: true }, function (err, responseData) {
         if (err) {
             alert('An error occured');
             console.log(err);
@@ -188,8 +217,14 @@ const createRoom = (id, username) => {
     console.log(loggedInUser);
     let room = Date.now() + Math.random();
     room = room.toString().replace(".", "_");
-    socket.emit('create', { room: room, userId: loggedInUser.user_id, withUserId: id });
-    openChatWindow(room, username);
+    socket.emit('create', { room: room, userId: loggedInUser.user_id, withUserId: id, isPrivate: true }, function(err, responseData) {
+        if(err) {
+            alert('An error occured');
+            console.log(err);
+            return;
+        }
+        openChatWindow(responseData.room_id, username);
+    });
 };
 socket.on('updateUserList', function (userList) {
     let loggedInUser = JSON.parse(sessionStorage.getItem('user'));
@@ -203,6 +238,7 @@ socket.on('updateUserList', function (userList) {
 });
 
 socket.on('invite', function (data) {
+    console.log('228: ', data);
     socket.emit("joinRoom", data);
 });
 socket.on('message', function (msg) {
@@ -242,7 +278,6 @@ socket.on('updateGroupsList', function (data, err) {
     }
     $('#group-list').html('<ul></ul>');
     data.groups.forEach((group) => {
-        console.log('244: ', group);
         $('#group-list ul').append(`<li data-id="${group.group_id}" onclick="openGroupWindow('${group.group_id}', '${group.group_name}', '${group._id}')">${group.group_name}</li>`);
     });
 });
@@ -269,7 +304,7 @@ socket.on('updateParticipants', function (data, err) {
         sessionStorage.setItem('user', JSON.stringify(updatedLoggedInUser));
     }
     data.participants.forEach((participant) => {
-        $(`#participants-${data.group_id}`).append(`<li data-id="${participant.participant_id}">${participant.participant.first_name}</li>`);
+        $(`#participants-${data.group_id}`).append(`<li data-id="${participant.participant_id}">${participant.participant.first_name} ${participant.isAdmin ? '(Admin)': ''}</li>`);
     });
 });
 
@@ -277,4 +312,9 @@ socket.on('userAddedToGroup', function(data) {
     console.log('268: ', data);
     $(`#add-user-${data.new_participant.group_id}`).css('display', 'none');
     socket.emit('fetchParticipants', { group_id: data.new_participant.group_id });
+});
+
+socket.on('newGroupMessage', function(data) {
+    console.log(data);
+    alert(`New message from ${data.message.sent_by.participant.first_name} in ${data.message.group.group_name}`);
 });

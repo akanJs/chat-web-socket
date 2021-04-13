@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { Types } = require('mongoose');
 const uuid = require('uuid');
 
 const userSchema = new mongoose.Schema({
@@ -29,6 +30,13 @@ const userSchema = new mongoose.Schema({
   user_full_name: {
     type: String,
     required: true
+  },
+  active: {
+    type: Boolean
+  },
+  socket: {
+    type: Types.ObjectId,
+    ref: 'Socket'
   }
 });
 
