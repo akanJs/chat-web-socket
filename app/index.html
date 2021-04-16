@@ -13,6 +13,11 @@
         
         <div id="after-login" style="display:none">
             <h1 id="me"></h1>
+            <div id="search-groups">
+                <input type="text" placeholder="search groups" id="groupName">
+                <button onclick="searchGroup()">Search</button>
+            </div>
+            <div id="search-group-result"></div>
             <div id="user-list" class="user-list"></div>
             <div id="group-list" class="group-list"></div>
             <p id="create-group" onclick="openAddGroupWindow()">Create Group</p>

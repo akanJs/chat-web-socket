@@ -10,14 +10,39 @@ const moment = require('moment');
 const { User } = require('./models/users.model');
 const { Group } = require('./models/group.model');
 const { Participant } = require('./models/participant.model');
-const { GroupMessage } = require('./models/message.model');
-const { Channel } = require('./models/channel.model');
+const { GroupMessage } = require('./models/message.model')
 const { PrivateRoom } = require('./models/privateRoom.model');
 const { Socket } = require('./models/socket.model');
+const { Request } = require('./models/request.model');
+const winston = require('winston');
 
 app.use(express.static('app'));
 app.use('/node_modules', express.static(path.join(__dirname, 'node_modules',)));
 app.use(express.json());
+
+const logger = winston.createLogger({
+  level: 'info',
+  format: winston.format.json(),
+  defaultMeta: { from: 'server' },
+  transports: [
+    //
+    // - Write all logs with level `error` and below to `error.log`
+    // - Write all logs with level `info` and below to `combined.log`
+    //
+    new winston.transports.File({ filename: 'error.log', level: 'error' }),
+    new winston.transports.File({ filename: 'combined.log' }),
+  ],
+});
+
+// If we're not in production then log to the `console` with the format:
+//  `${info.level}: ${info.message} JSON.stringify({ ...rest }) `;
+
+
+if (process.env.NODE_ENV !== 'production') {
+  logger.add(new winston.transports.Console({
+    format: winston.format.prettyPrint()
+  }));
+}
 
 let clientSocketIds = [];
 let connectedUsers = [];
@@ -32,7 +57,7 @@ mongoose.connect('mongodb://localhost:27017/ChatDB', {
 
 app.post('/register', async (req, res) => {
   const user = await User.findOne({ username: req.body.username });
-  console.log(user);
+  logger.info(user);
   if (user) {
     return res.json({
       status: false,
@@ -63,6 +88,31 @@ app.post('/register', async (req, res) => {
 
 });
 
+
+app.get('/get-group', async (req, res) => {
+  logger.info(req.query);
+  const { groupName } = req.query;
+
+  try {
+    const requestedGroup = await Group.find();
+    const groups = requestedGroup.filter((x) => x.group_name.toUpperCase().includes(groupName.toUpperCase()));
+    if (requestedGroup) {
+      return res.status(200).json({
+        status: true,
+        groups: groups
+      });
+    }
+    return res.status(404).json({
+      status: false,
+      error: 'No group found'
+    });
+  } catch (error) {
+    return res.status(500).json({
+      status: false,
+      error: error.message
+    });
+  }
+});
 
 app.get('/fetch-contacts', async (req, res) => {
   try {
@@ -115,21 +165,21 @@ const getSocketByUserId = (userId) => {
 
 /* socket function starts */
 io.on('connection', socket => {
-  console.log('conected');
+  logger.info('conected');
   socket.on('disconnect', async () => {
-    console.log("disconnected");
+    logger.info("disconnected");
     try {
       const userSocket = await Socket.findOne({ socket: socket.id });
-      if(userSocket) {
+      if (userSocket) {
         const user = await User.findOne({ socket: userSocket._id });
-        if(user) {
+        if (user) {
           const userUpdate = await User.findByIdAndUpdate(user._id, { active: false });
           const connectedUsers = await User.find({ active: true });
           io.emit('updateUserList', connectedUsers);
         }
       }
     } catch (error) {
-      console.log(error);
+      logger.error(error);
     }
   });
 
@@ -143,51 +193,58 @@ io.on('connection', socket => {
     if (userExists) {
       try {
         const clientSocketExist = await Socket.findOne({ user_id: user._id });
-        console.log('146: ', clientSocketExist);
+        const userGroups = await Participant.find({ user_id: user._id });
+        logger.info('146: ', clientSocketExist);
         if (!clientSocketExist) {
           const userSocket = await Socket.create({ socket: socket.id, user_id: user._id });
-          console.log('149: ', userSocket);
+          logger.info('149: ', userSocket);
           if (userSocket) {
             const userUpdate = await User.findByIdAndUpdate(user._id, { active: true, socket: userSocket._id });
             const connectedUsers = await User.find({ active: true });
             io.emit('updateUserList', connectedUsers);
+            // subscribe user to all his groups
+            for (let i = 0; i < userGroups.length; i++) {
+              const group = await Group.findById(userGroups[i].group_id);
+              logger.info('157: ', group);
+              socket.join(group.group_id);
+            }
+            return;
           }
-          return;
         }
 
         // update user socket and make user active
         const updatedClientSocket = await Socket.findOneAndUpdate({ user_id: user._id }, { socket: socket.id });
-        if(updatedClientSocket) {
+        if (updatedClientSocket) {
           const userUpdate = await User.findByIdAndUpdate(user._id, { active: true });
-          console.log('162', socket.id);
+          logger.info('169', socket.id);
           const newClientSocket = await Socket.findOne({ user_id: user._id });
-          console.log('164: ', newClientSocket.socket);
+          logger.info('171: ', newClientSocket.socket);
           const connectedUsers = await User.find({ active: true });
           io.emit('updateUserList', connectedUsers);
-          return;
         }
       } catch (error) {
-        console.log(error);
+        logger.error(error);
         cb(error, null);
         return;
       }
 
       try {
         const participant = await Participant.find({ participant: user._id });
-        console.log('146: ', participant);
+        logger.info('146: ', participant);
         const groups = [];
         for (let i = 0; i < participant.length; i++) {
           const group = await Group.findById(participant[i].group_id);
-          console.log('150: ', group);
+          logger.info('187: ', group);
           if (group) {
-            console.log('152: ', group);
+            logger.info('189: ', group);
+            socket.join(group.group_id);
             groups.push(group);
           }
         }
-        console.log('156: ', groups);
+        logger.info('194: ', groups);
         socket.emit('updateGroupsList', { groups });
       } catch (error) {
-        console.log(error);
+        logger.error(error);
         cb(error, null);
       }
     }
@@ -195,7 +252,7 @@ io.on('connection', socket => {
   });
 
   socket.on('create', async function (data, cb) {
-    console.log(data);
+    logger.info(data);
     data.room = uuid.v4(); // replace room id with unique id
     // Create room in db
     if (data.isPrivate) {
@@ -205,7 +262,7 @@ io.on('connection', socket => {
 
         if (user && receipientUser) { // check if both users exists
           const chatExists = await PrivateRoom.findOne({ user_id: user._id, with_user_id: receipientUser._id }); // check if chat exists between users
-          console.log('204: ', chatExists);
+          logger.info('204: ', chatExists);
           if (!chatExists) { // chat does not exist
             const privateRoomData = { // new chat data
               room_id: uuid.v4(),
@@ -233,14 +290,14 @@ io.on('connection', socket => {
         cb({ error: 'both users do not exist' });
         return;
       } catch (error) {
-        console.log(error);
+        logger.error(error);
         cb(error, null);
         return;
       }
     }
 
     if (data.isChannel) {
-      console.log(data);
+      logger.info('243: ', data);
       try {
         // Find user in db
         const user = await User.findOne({ user_id: data.userId });
@@ -272,7 +329,7 @@ io.on('connection', socket => {
 
           const participant = await Participant.create(participant_data);
           if (participant) {
-            console.log(participant);
+            logger.info(participant);
             cb(null, { group, participant });
             socket.join(group.group_id);
             socket.emit('groupCreated', { group, participant });
@@ -289,12 +346,12 @@ io.on('connection', socket => {
   });
 
   socket.on('joinRoom', function (data) {
-    console.log('280: ', data);
+    logger.info('280: ', data);
     socket.join(data.room.room_id);
   });
 
   socket.on('message', function (data) {
-    console.log(data);
+    logger.info(data);
     socket.broadcast.to(data.room).emit('message', data);
   });
 
@@ -302,11 +359,11 @@ io.on('connection', socket => {
 
   // Get all groups created by user
   socket.on('fetchGroups', async function (data, cb) {
-    console.log('Hello');
     const { user_id } = data;
+    logger.info('364: ', data);
     try {
       const participant = await Participant.find({ participant: user_id });
-      console.log('Participants: ', participant);
+      logger.info('Participants: ', participant);
       const groups = [];
       for (let i = 0; i < participant.length; i++) {
         const group = await Group.findById(participant[i].group_id);
@@ -326,28 +383,26 @@ io.on('connection', socket => {
   socket.on('fetchParticipants', async function (data, cb) {
     try {
       const group = await Group.findById(data.group_id);
-      const groupParticipants = await Participant.find({ group_id: data.group_id }).execPopulate('participant');
-      const socketsInRoom = await io.in(group.group_id).fetchSockets();
-      const usersSocketNotInRoom = [];
-      if (groupParticipants) {
-        for (let i = 0; i < groupParticipants.length; i++) {
-          const socketNotInRoom = socketsInRoom.filter((socket) => socket.id !== groupParticipants[i].participant.socket);
-          usersSocketNotInRoom.push(socketNotInRoom);
+      const groupParticipants = await Participant.find({ group_id: data.group_id }).populate({
+        path: 'participant',
+        populate: {
+          path: 'socket',
+          model: 'Socket'
         }
-        console.log('299: ', socketsInRoom);
-        console.log('300: ', groupParticipants);
-        socket.emit('updateParticipants', { participants: groupParticipants, group_id: group.group_id });
+      });
+      if (groupParticipants) {
+        socket.emit('updateParticipants', { participants: groupParticipants, group_id: group.group_id, groupId: group._id });
         return -1;
       }
     } catch (error) {
-      console.log(error);
+      logger.error(error);
       cb(error, null);
     }
   });
 
   // Add users to group (Admin)
   socket.on('addUserToGroup', async function (data, cb) {
-    console.log(data);
+    logger.info('357', data);
     // validate if required data is passed
     if (!data.group_id || !data.user_id || !data.admin) {
       cb({ error: 'one or more fields are missing' });
@@ -357,44 +412,20 @@ io.on('connection', socket => {
     try {
       // find group, user, participant
       const group = await Group.findOne({ group_id: data.group_id });
-      const user = await User.findOne({ user_id: data.user_id });
+      const user = await User.findOne({ user_id: data.user_id }).populate('socket');
       const adminUser = await User.findById(data.admin);
-      const userGroups = await Participant.find({ participant: user._id }).populate('group');
-      const participantGroups = await Participant.find({ participant: data.admin });
-      console.log('263: ', adminUser);
-
       if (group && user && adminUser) {
-        let userExists;
         // Find if user exists in group
-        for (let i = 0; i < userGroups.length; i++) {
-          const userExistsInGroup = await Participant.findOne({ group_id: group._id, participant: user._id }).populate('participant group_id');
-          console.log('269: ', userExistsInGroup);
+        const userExistsInGroup = await Participant.findOne({ group_id: group._id, participant: user._id }).populate('participant group_id');
+        logger.info('269: ', userExistsInGroup);
           if (userExistsInGroup) {
             cb({ error: 'user exists in group' }, null);
-            userExists = true;
-            break;
+            return;
           }
-        }
 
-        if (userExists) {
-          return;
-        }
-
-        console.log('277: ', userExists);
-
-        let isAdmin;
         // Verify if participant is an admin
-        for (let i = 0; i < participantGroups.length; i++) {
-          const participantIsAdmin = await Participant.findOne({ group_id: group._id, participant: adminUser._id });
-          if (participantIsAdmin.isAdmin) {
-            isAdmin = participantIsAdmin.isAdmin;
-            console.log('286: ', isAdmin);
-            process.env.isAdmin = JSON.stringify(isAdmin);
-            break;
-          }
-        }
-
-        if (isAdmin) { // only admins can add user
+        const participantIsAdmin = await Participant.findOne({ group_id: group._id, participant: adminUser._id, isAdmin: true });
+        if (participantIsAdmin) { // only admins can add user
           // Create participant
           const participant_data = {
             participant_id: uuid.v4(),
@@ -403,11 +434,32 @@ io.on('connection', socket => {
             joined_date: moment().format('dddd, MMMM Do YYYY, h:mm:ss a')
           };
 
-          const new_participant = await (await Participant.create(participant_data)).populate('group');
+          const new_participant = await (await Participant.create(participant_data)).execPopulate('group participant');
+          if (data.approval) {
+            const updateRequest = await Request.findOneAndUpdate({ user: user._id, group: group._id }, { approved: true, approvedBy: adminUser._id, approved_date: moment().format('dddd, MMMM Do YYYY, h:mm:ss a') });
+            logger.info('updatedRequest: ', updateRequest);
+            if (updateRequest) {
+              const requests = await Request.find({ group: group._id, approved: false });
+              logger.info('Requests: ', requests);
+              const groupParticipants = await Participant.find({ group_id: group._id }).populate({
+                path: 'participant',
+                populate: {
+                  path: 'socket',
+                  model: 'Socket'
+                }
+              });
+              logger.info('447: ', groupParticipants, requests);
+              cb(null, { participants: groupParticipants, requests });
+              socket.broadcast.to(user.socket.socket).emit("invite", { room: { room_id: group.group_id, userId: adminUser.user_id, withUserId: user.user_id } });
+              socket.emit('userAddedToGroup', { new_participant });
+              socket.broadcast.to(group.group_id).emit('notify', { message: `${new_participant.participant.username} has been added to ${group.group_name}` });
+              return;
+            }
+          }
           cb(null, { participant: new_participant });
-          let withSocket = getSocketByUserId(user.user_id);
-          socket.broadcast.to(withSocket.id).emit("invite", { room: { room: group.group_id, userId: adminUser.user_id, withUserId: user.user_id } });
+          socket.broadcast.to(user.socket.socket).emit("invite", { room: { room_id: group.group_id, userId: adminUser.user_id, withUserId: user.user_id } });
           socket.emit('userAddedToGroup', { new_participant });
+          socket.broadcast.to(group.group_id).emit('notify', { message: `${new_participant.participant.username} has been added to ${group.group_name}` });
           return;
         }
         cb({ error: 'unauthorized' });
@@ -416,16 +468,15 @@ io.on('connection', socket => {
       cb({ error: 'No such group or user' });
       return -1;
     } catch (error) {
-
+      console.log(error);
+      logger.error(error);
+      cb(error, null);
     }
   });
 
-  // socket.on('joinGroup', function (data) {
-
-  // });
-
+  // New group message
   socket.on('newGroupMessage', async function (data, cb) {
-    console.log('326: ', data);
+    logger.info('326: ', data);
     // save message
     try {
       const participant = await (await Participant.findOne({ participant: data.sent_by })).execPopulate('participant');
@@ -436,8 +487,8 @@ io.on('connection', socket => {
           sent_date: moment().format('dddd, MMMM Do YYYY, h:mm:ss a')
         };
         message_data.sent_by = participant._id;
-        console.log(message_data);
-        console.log(participant._id);
+        logger.info(message_data);
+        logger.info(participant._id);
         const new_message = await (await GroupMessage.create(message_data)).execPopulate({
           path: 'group sent_by',
           populate: {
@@ -459,9 +510,141 @@ io.on('connection', socket => {
     }
   });
 
+  socket.on('fetchGroupMessages', async function (data, cb) {
+    logger.info(data);
+    try {
+      const messages = await GroupMessage.find({ group: data.group_id }).populate({
+        path: 'group sent_by',
+        populate: {
+          path: 'participant',
+          model: 'User'
+        }
+      });
+      logger.info('474: ', messages);
+      cb(false, messages);
+      return;
+    } catch (error) {
+      cb(error, null);
+    }
+  });
+
+  socket.on('fetchJoinRequests', async function (data, cb) {
+    try {
+      const requests = await Request.find({ group: data.group, approved: false }).populate('user');
+      if (requests) {
+        cb(null, { requests });
+        return;
+      }
+      cb({ error: 'No requests' }, null);
+      return;
+    } catch (error) {
+      cb({ error: error }, null);
+      return;
+    }
+  });
+
+  socket.on('requestToJoinGroup', async function (data, cb) {
+    const { group_id, user_id } = data;
+    try {
+      const group = await Group.findOne({ group_id });
+      const user = await User.findOne({ user_id });
+
+      if (group && user) {
+
+        // Check if user exists in group
+        const userInGroup = await Participant.findOne({ group_id: group._id, participant: user._id });
+        if (userInGroup) {
+          cb({ error: 'User exists in group' }, null);
+          return;
+        }
+
+        // check if user request exists
+        const requestExist = await Request.findOne({ group: group._id, user: user._id });
+        if (requestExist) {
+          cb({ error: 'Cannot request twice' }, null);
+          return;
+        }
+        const requestData = {
+          group: group._id,
+          user: user._id,
+          request_date: moment().format('dddd, MMMM Do YYYY, h:mm:ss a')
+        };
+        const request = await Request.create(requestData);
+        if (request) {
+          cb(null, request);
+          return;
+        }
+      }
+      cb({ error: 'no such group or user' }, null);
+      return;
+    } catch (error) {
+      cb({ error: error.message }, null);
+    }
+  });
+
+  socket.on('makeParticipantAdmin', async function(data, cb) {
+    try {
+      const group = await Group.findById(data.group_id);
+      const participant = await Participant.findOne({ participant_id: data.participant_id, group_id: group._id });
+      const adminParticipant = await Participant.findOne({ participant_id: data.admin_id, group_id: group._id, isAdmin: true });
+
+      logger.info(adminParticipant);
+      logger.info(group);
+      logger.info(participant);
+      if(group && participant && adminParticipant) {
+        try {
+          // update participant admin status
+          const updatedParticipant = await Participant.findByIdAndUpdate(participant._id, { isAdmin: !participant.isAdmin }).populate('group_id');
+          if(updatedParticipant) {
+            updatedParticipant.isAdmin = !updatedParticipant.isAdmin;
+            if(updatedParticipant.isAdmin) {
+              cb(null, updatedParticipant);
+              return;
+            }
+            cb(null, { updatedParticipant, message: 'User is no longer an admin' })
+            return;
+          }
+        } catch (error) {
+          cb({ error }, null);
+          return;
+        }
+      }
+      cb({ error: 'No user or group or admin' }, null);
+    } catch (error) {
+      
+    }
+  });
+
+  socket.on('leaveGroup', async function(data, cb) {
+    try {
+      const group = await Group.findOne({ group_id: data.group_id });
+      const participant = await Participant.findOne({ group_id: group._id, participant: data.user_id }).populate('participant')
+
+      if(group && participant) {
+        const deletedParticipant = await Participant.findByIdAndDelete(participant._id);
+        const request = await Request.findOne({ user: data.user_id, group: group._id });
+        logger.info(`user request ${request}`);
+        logger.info(deletedParticipant);
+        if(deletedParticipant) {
+          if(request) {
+            const deleteRequest = await Request.findByIdAndDelete(request._id);
+            if(deleteRequest) {
+              logger.info(`Request has been deleted: ${deleteRequest}`);
+            }
+          }
+          cb(null, deletedParticipant);
+          socket.broadcast.to(group.group_id).emit('notify', { message: `${participant.participant.username} has left the group` });
+          return;
+        }
+      }
+    } catch (error) {
+      
+    }
+  });
+
 });
 /* socket function ends */
 
 server.listen(8082, function () {
-  console.log("server started");
+  logger.info("server started");
 });
