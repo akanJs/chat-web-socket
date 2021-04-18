@@ -351,7 +351,7 @@ io.on('connection', socket => {
   });
 
   socket.on('message', function (data) {
-    logger.info(data);
+    logger.info('message data', data);
     socket.broadcast.to(data.room).emit('message', data);
   });
 

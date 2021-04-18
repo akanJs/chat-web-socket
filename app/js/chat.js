@@ -83,7 +83,7 @@ const requestToJoinGroup = (group_id, user_id) => {
 };
 
 const sendMyMessage = (chatWidowId, fromUser, message) => {
-    let loggedInUser = JSON.parse(sessionStorage.getItem('user'));
+    let loggedInUser = {...JSON.parse(sessionStorage.getItem('user'))};
     let meClass = loggedInUser.user_id == fromUser.user_id ? 'me' : '';
 
     $('#after-login').find(`#${chatWidowId} .body`).append(`
@@ -135,6 +135,7 @@ const sendGroupMessage = (group_id) => {
 
 // Open chat screen
 const openChatWindow = (room, username) => {
+    console.log(room, username);
     console.log('openChatWindow: ', {
         room
     });
@@ -335,7 +336,6 @@ const leaveGroup = group_id => {
 // Function to create room
 const createRoom = (id, username) => {
     let loggedInUser = JSON.parse(sessionStorage.getItem('user'));
-    console.log(loggedInUser);
     let room = Date.now() + Math.random();
     room = room.toString().replace(".", "_");
     socket.emit('create', {
