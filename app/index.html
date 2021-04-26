@@ -1,33 +1,58 @@
 <!DOCTYPE html>
 <html>
-    <head>
-        <title>Chat test</title>
-        <link rel="stylesheet" href="css/style.css" />
-    </head>
-    <body>
-        <div class="login" id="login">
-            <input id="login_name" placeholder="Username">
-            <input type="password" id="login_pass" placeholder="Password" value="regEx">
-            <button onClick="login()">Login</button>
-        </div>
-        
-        <div id="after-login" style="display:none">
-            <h1 id="me"></h1>
-            <div id="search-groups">
-                <input type="text" placeholder="search groups" id="groupName">
-                <button onclick="searchGroup()">Search</button>
-            </div>
-            <div id="search-group-result"></div>
-            <div id="user-list" class="user-list"></div>
-            <div id="group-list" class="group-list"></div>
-            <p id="create-group" onclick="openAddGroupWindow()">Create Group</p>
-        </div>
-    
 
-        <script src="js/jquery-3.5.1.min.js"></script>
-        <script src="/node_modules/socket.io/client-dist/socket.io.min.js"></script>
-        <script>
-            const socket = io({transports: ['websocket']}); 
-        </script>
-        <script src="js/chat.js"></script>
-    </body>
+<head>
+    <title>Chat test</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/css/bootstrap.min.css"
+        integrity="sha384-B0vP5xmATw1+K9KRQjQERJvTumQW0nPEzvF6L/Z6nronJ3oUOFUFpCjEUQouq2+l" crossorigin="anonymous">
+    <link rel="stylesheet" href="css/style.css" />
+    <script src="https://unpkg.com/peerjs@1.2.0/dist/peerjs.min.js"></script>
+</head>
+
+<body>
+    <div class="login" id="login">
+        <input id="login_name" placeholder="Username">
+        <input type="password" id="login_pass" placeholder="Password" value="regEx">
+        <button onClick="login()">Login</button>
+    </div>
+
+    <div id="after-login" style="display:none">
+        <h1 id="me"></h1>
+        <div id="search-groups">
+            <input type="text" placeholder="search groups" id="groupName">
+            <button onclick="searchGroup()">Search</button>
+        </div>
+        <div id="search-group-result"></div>
+        <div id="user-list" class="user-list"></div>
+        <div id="group-list" class="group-list"></div>
+        <p id="create-group" onclick="openAddGroupWindow()">Create Group</p>
+        <div id="video-grid"></div>
+        <!-- Modal -->
+        <div class="modal fade" id="incomingCallModal" tabindex="-1" role="dialog" aria-labelledby="modelTitleId"
+            aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered modal-sm" role="document">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="callerName"></h5>
+                        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                            <span aria-hidden="true">&times;</span>
+                        </button>
+                    </div>
+                    <div class="modal-body" id="callerImg"></div>
+                    <div class="modal-footer">
+                        <button type="button" id="declineCallBtn" class="btn btn-danger" data-dismiss="modal">Decline</button>
+                        <button type="button" id="acceptCallBtn" class="btn btn-success">Accept</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <script src="js/jquery-3.5.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.0/dist/js/bootstrap.min.js"
+        integrity="sha384-+YQ4JLhjyBLPDQt//I+STsc9iw4uQqACwlvpslubQzn4u2UU2UFM80nGisd026JF" crossorigin="anonymous"></script>
+    <script src="/node_modules/socket.io/client-dist/socket.io.js"></script>
+    <script src="/node_modules/socket.io-stream/socket.io-stream.js"></script>
+    <script src="js/chat.js"></script>
+</body>

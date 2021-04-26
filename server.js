@@ -350,6 +350,16 @@ io.on('connection', socket => {
     socket.join(data.room.room_id);
   });
 
+  socket.on('join-video', (roomId, userId) => {
+    console.log(roomId, userId);
+    console.log('Socket: ', socket.broadcast);
+    socket.broadcast.to(roomId).emit('user-connected', userId);
+    socket.on('disconnect', () => {
+      console.log('disconnected');
+      socket.broadcast.to(roomId).emit('user-disconnected', userId);
+    });
+  });
+
   socket.on('message', function (data) {
     logger.info('message data', data);
     socket.broadcast.to(data.room).emit('message', data);
@@ -640,6 +650,18 @@ io.on('connection', socket => {
     } catch (error) {
       
     }
+  });
+
+  socket.on('call user', async ({roomId, user }) => {
+    console.log('call data: ', roomId, user);
+    const sockets = await io.in(roomId).fetchSockets();
+    console.log(sockets.length);
+    socket.broadcast.to(roomId).emit('incoming call', { roomId, user });
+  });
+
+  socket.on('call answered', function(data) {
+    console.log('call data: ', data);
+    socket.broadcast.to(data.roomId).emit('call answered', { roomId: data.roomId });
   });
 
 });

@@ -1,4 +1,8 @@
 // jshint esversion:9
+const socket = io({
+    transports: ['websocket']
+});
+
 const login = () => {
     let username = $('#login_name').val();
     let password = $('#login_pass').val();
@@ -83,7 +87,7 @@ const requestToJoinGroup = (group_id, user_id) => {
 };
 
 const sendMyMessage = (chatWidowId, fromUser, message) => {
-    let loggedInUser = {...JSON.parse(sessionStorage.getItem('user'))};
+    let loggedInUser = { ...JSON.parse(sessionStorage.getItem('user')) };
     let meClass = loggedInUser.user_id == fromUser.user_id ? 'me' : '';
 
     $('#after-login').find(`#${chatWidowId} .body`).append(`
@@ -143,7 +147,7 @@ const openChatWindow = (room, username) => {
         $('#after-login').append(`
         <div class="chat-window" id="${room}">
             <div class="chat_with_user">
-                <h3>${username}</h3>
+                <h3>${username} <small onclick="startVideoCall('${room}')">(video call)</small></h3>
             </div>
             <div class="body"></div>
             <div class="footer">
@@ -322,8 +326,8 @@ const makeParticipantAdmin = (group_id, participant_id, admin_id) => {
 
 const leaveGroup = group_id => {
     const loggedInUser = JSON.parse(sessionStorage.getItem('user'));
-    socket.emit('leaveGroup', { group_id, user_id: loggedInUser._id }, function(err, responseData) {
-        if(err) {
+    socket.emit('leaveGroup', { group_id, user_id: loggedInUser._id }, function (err, responseData) {
+        if (err) {
             alert('An error occured');
             console.log(err);
             return;
@@ -442,9 +446,9 @@ socket.on('updateParticipants', function (data, err) {
         console.log('loggedInUser: ', loggedInUserInGroup);
         $(`#participants-${data.group_id}`).append(`
             <li id="${participant.participant_id}" data-id="${participant.participant_id}">
-            ${participant.participant.first_name} ${participant.isAdmin ? '(Admin)' : ''} ${loggedInUserInGroup.isAdmin && participant.participant.user_id !== loggedInUserInGroup.participant.user_id  && !participant.isAdmin ? `<small onclick="makeParticipantAdmin('${participant.group_id}', '${participant.participant_id}', '${loggedInUserInGroup.participant_id}')">
-            (Make Admin)</small>` : loggedInUserInGroup.isAdmin && participant.participant.user_id !== loggedInUserInGroup.participant.user_id  && participant.isAdmin ? 
-            `<small onclick="makeParticipantAdmin('${participant.group_id}', '${participant.participant_id}', '${loggedInUserInGroup.participant_id}')">
+            ${participant.participant.first_name} ${participant.isAdmin ? '(Admin)' : ''} ${loggedInUserInGroup.isAdmin && participant.participant.user_id !== loggedInUserInGroup.participant.user_id && !participant.isAdmin ? `<small onclick="makeParticipantAdmin('${participant.group_id}', '${participant.participant_id}', '${loggedInUserInGroup.participant_id}')">
+            (Make Admin)</small>` : loggedInUserInGroup.isAdmin && participant.participant.user_id !== loggedInUserInGroup.participant.user_id && participant.isAdmin ?
+                `<small onclick="makeParticipantAdmin('${participant.group_id}', '${participant.participant_id}', '${loggedInUserInGroup.participant_id}')">
             (Remove Admin)</small>` : ''
             }
             </li>
@@ -482,15 +486,130 @@ socket.on('newGroupMessage', function (data) {
     alert(`New message from ${data.message.sent_by.participant.first_name} in ${data.message.group.group_name}`);
 });
 
-socket.on('notify', function(data) {
+socket.on('notify', function (data) {
     const loggedInUser = JSON.parse(sessionStorage.getItem('user'));
     const messageParts = data.message.split(' ');
     console.log(loggedInUser.username);
     console.log(messageParts);
-    if(loggedInUser.username === messageParts[0]) {
+    if (loggedInUser.username === messageParts[0]) {
         const newMessage = data.message.replace(loggedInUser.username, 'You');
         alert(newMessage);
         return;
     }
     alert(data.message);
 });
+
+
+async function getStream() {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    return stream;
+}
+
+const videoGrid = document.getElementById('video-grid');
+
+const myPeer = new Peer(undefined, {
+    host: '/',
+    port: '3001'
+});
+
+const peers = {};
+
+myPeer.on('open', id => {
+    localStorage.setItem('peerId', id);
+});
+
+socket.on('user-connected', (userId) => {
+    console.log('user connected');
+    
+});
+
+socket.on('user-disconnected', (userId) => {
+    console.log('user disconnected');
+    console.log(peers[userId]);
+    if (peers[userId]) peers[userId].close();
+    localStorage.removeItem('peerId');
+});
+
+function openIncomingCallWindow(roomId, user) {
+    console.log(roomId, user);
+    $('#callerName').text(`Incoming Video Call from ${user.username}`);
+    const callerImg = document.createElement('img');
+    callerImg.src = user.user_img;
+    callerImg.style.width = '100%';
+    $('#callerImg').append(callerImg);
+    $('#incomingCallModal').modal('toggle');
+
+    $('#acceptCallBtn').on('click', async (e) => {
+        e.preventDefault();
+        socket.emit('call answered', { roomId });
+        const stream = await getStream();
+        const myVideo = document.createElement('video');
+        const userPeerId = localStorage.getItem('peerId');
+        addVideoStream(myVideo, stream);
+        connectToNewUser(userPeerId, stream);
+        $('#incomingCallModal').modal('toggle');
+    });
+
+    $('#acceptCallBtn').on('click', (e) => {
+        e.preventDefault();
+        socket.emit('call declined', { roomId });
+        $('#incomingCallModal').modal('toggle');
+    });
+}
+
+
+socket.on('incoming call', (data) => {
+    console.log(data);
+    openIncomingCallWindow(data.roomId, data.user);
+});
+
+socket.on('call answered', async (data) => {
+    const userPeerId = localStorage.getItem('peerId');
+    const stream = await getStream();
+    connectToNewUser(userPeerId, stream);
+});
+
+myPeer.on('call', async call => {
+    const loggedInUser = JSON.parse(sessionStorage.getItem('user'));
+    console.log('Call initiated by ', loggedInUser.username);
+    const stream = await getStream();
+    call.answer(stream);
+    const video = document.createElement('video');
+    call.on('stream', userVideoStream => {
+        addVideoStream(video, userVideoStream);
+    });
+});
+
+async function startVideoCall(roomId) {
+    const myVideo = document.createElement('video');
+    myVideo.muted = false;
+    const stream = await getStream();
+    console.log(stream);
+    // emit new call to user
+    addVideoStream(myVideo, stream, roomId);
+}
+
+function addVideoStream(video, stream, roomId) {
+    video.srcObject = stream;
+    video.addEventListener('loadedmetadata', () => {
+        video.play();
+    });
+    videoGrid.append(video);
+    const loggedInUser = JSON.parse(sessionStorage.getItem('user'));
+    socket.emit('call user', {roomId, user: loggedInUser });
+}
+
+async function connectToNewUser(userId, stream) {
+    console.log(userId, stream);
+    const call = myPeer.call(userId, stream);
+    const video = document.createElement('video');
+    call.on('stream', userVideoStream => {
+        console.log('call streaming', userVideoStream);
+        addVideoStream(video, userVideoStream);
+    });
+    call.on('close', () => {
+        video.remove();
+    });
+
+    peers[userId] = call;
+}

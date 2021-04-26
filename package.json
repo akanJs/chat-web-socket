@@ -18,11 +18,15 @@
   },
   "homepage": "https://github.com/gitoutofbox/chat-room-nodejs#readme",
   "dependencies": {
+    "busboy": "^0.3.1",
+    "busboy-body-parser": "^0.3.2",
+    "connect-busboy": "0.0.2",
     "express": "^4.17.1",
     "moment": "^2.29.1",
     "mongoose": "^5.12.3",
     "mysql": "^2.18.1",
     "socket.io": "^4.0.1",
+    "socket.io-stream": "^0.9.1",
     "uuid": "^8.3.2",
     "winston": "^3.3.3"
   }
