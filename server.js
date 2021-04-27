@@ -183,23 +183,23 @@ io.on('connection', socket => {
     }
   });
 
-  socket.on('loggedin', async function (user, cb) {
+  socket.on('loggedin', async function (data, cb) {
     // clientSocketIds.push({ socket: socket, userId: user.user_id });
     // connectedUsers = connectedUsers.filter(item => item.user_id != user.user_id);
     // connectedUsers.push({ ...user, socketId: socket.id });
 
-    const userExists = await User.findById(user._id);
+    const userExists = await User.findById(data.user._id);
 
     if (userExists) {
       try {
-        const clientSocketExist = await Socket.findOne({ user_id: user._id });
-        const userGroups = await Participant.find({ user_id: user._id });
+        const clientSocketExist = await Socket.findOne({ user_id: data.user._id });
+        const userGroups = await Participant.find({ user_id: data.user._id });
         logger.info('146: ', clientSocketExist);
         if (!clientSocketExist) {
-          const userSocket = await Socket.create({ socket: socket.id, user_id: user._id });
+          const userSocket = await Socket.create({ socket: socket.id, user_id: data.user._id });
           logger.info('149: ', userSocket);
           if (userSocket) {
-            const userUpdate = await User.findByIdAndUpdate(user._id, { active: true, socket: userSocket._id });
+            const userUpdate = await User.findByIdAndUpdate(data.user._id, { active: true, socket: userSocket._id, peerId: data.peerId });
             const connectedUsers = await User.find({ active: true });
             io.emit('updateUserList', connectedUsers);
             // subscribe user to all his groups
@@ -213,11 +213,11 @@ io.on('connection', socket => {
         }
 
         // update user socket and make user active
-        const updatedClientSocket = await Socket.findOneAndUpdate({ user_id: user._id }, { socket: socket.id });
+        const updatedClientSocket = await Socket.findOneAndUpdate({ user_id: data.user._id }, { socket: socket.id });
         if (updatedClientSocket) {
-          const userUpdate = await User.findByIdAndUpdate(user._id, { active: true });
+          const userUpdate = await User.findByIdAndUpdate(data.user._id, { active: true, peerId: data.peerId });
           logger.info('169', socket.id);
-          const newClientSocket = await Socket.findOne({ user_id: user._id });
+          const newClientSocket = await Socket.findOne({ user_id: data.user._id });
           logger.info('171: ', newClientSocket.socket);
           const connectedUsers = await User.find({ active: true });
           io.emit('updateUserList', connectedUsers);
@@ -229,7 +229,7 @@ io.on('connection', socket => {
       }
 
       try {
-        const participant = await Participant.find({ participant: user._id });
+        const participant = await Participant.find({ participant: data.user._id });
         logger.info('146: ', participant);
         const groups = [];
         for (let i = 0; i < participant.length; i++) {

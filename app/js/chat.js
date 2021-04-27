@@ -3,6 +3,18 @@ const socket = io({
     transports: ['websocket']
 });
 
+const myPeer = new Peer(undefined, {
+    host: '/',
+    port: '3001'
+});
+
+myPeer.on('open', id => {
+    // store user peerId to localstorage
+    localStorage.setItem('peerId', id);
+   
+});
+
+
 const login = () => {
     let username = $('#login_name').val();
     let password = $('#login_pass').val();
@@ -24,7 +36,9 @@ const login = () => {
                             ${resp.data.user_full_name}
                          </div>
                          `);
-                socket.emit('loggedin', resp.data, function (err) {
+
+                const id = localStorage.getItem('peerId');
+                socket.emit('loggedin', {user: resp.data, peerId: id}, function (err) {
                     alert('An error occured');
                     console.log(err);
                 });
@@ -500,6 +514,8 @@ socket.on('notify', function (data) {
 });
 
 
+const peers = {};
+
 async function getStream() {
     const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
     return stream;
@@ -507,20 +523,9 @@ async function getStream() {
 
 const videoGrid = document.getElementById('video-grid');
 
-const myPeer = new Peer(undefined, {
-    host: '/',
-    port: '3001'
-});
-
-const peers = {};
-
-myPeer.on('open', id => {
-    localStorage.setItem('peerId', id);
-});
-
 socket.on('user-connected', (userId) => {
     console.log('user connected');
-    
+
 });
 
 socket.on('user-disconnected', (userId) => {
@@ -544,9 +549,7 @@ function openIncomingCallWindow(roomId, user) {
         socket.emit('call answered', { roomId });
         const stream = await getStream();
         const myVideo = document.createElement('video');
-        const userPeerId = localStorage.getItem('peerId');
         addVideoStream(myVideo, stream);
-        connectToNewUser(userPeerId, stream);
         $('#incomingCallModal').modal('toggle');
     });
 
@@ -596,7 +599,7 @@ function addVideoStream(video, stream, roomId) {
     });
     videoGrid.append(video);
     const loggedInUser = JSON.parse(sessionStorage.getItem('user'));
-    socket.emit('call user', {roomId, user: loggedInUser });
+    socket.emit('call user', { roomId, user: loggedInUser });
 }
 
 async function connectToNewUser(userId, stream) {

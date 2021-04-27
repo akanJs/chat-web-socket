@@ -34,6 +34,9 @@ const userSchema = new mongoose.Schema({
   active: {
     type: Boolean
   },
+  peerId: {
+    type: String
+  },
   socket: {
     type: Types.ObjectId,
     ref: 'Socket'
