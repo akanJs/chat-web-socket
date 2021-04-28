@@ -11,7 +11,7 @@ const myPeer = new Peer(undefined, {
 myPeer.on('open', id => {
     // store user peerId to localstorage
     localStorage.setItem('peerId', id);
-   
+
 });
 
 
@@ -38,7 +38,7 @@ const login = () => {
                          `);
 
                 const id = localStorage.getItem('peerId');
-                socket.emit('loggedin', {user: resp.data, peerId: id}, function (err) {
+                socket.emit('loggedin', { user: resp.data, peerId: id }, function (err) {
                     alert('An error occured');
                     console.log(err);
                 });
@@ -161,7 +161,10 @@ const openChatWindow = (room, username) => {
         $('#after-login').append(`
         <div class="chat-window" id="${room}">
             <div class="chat_with_user">
-                <h3>${username} <small onclick="startVideoCall('${room}')">(video call)</small></h3>
+                <h3>${username}
+                    <small onclick="startCall('${room}', 'video')">(video call)</small>
+                    <small onclick="startCall('${room}', 'audio')">(Voice call)</small>
+                </h3>
             </div>
             <div class="body"></div>
             <div class="footer">
@@ -515,9 +518,15 @@ socket.on('notify', function (data) {
 
 
 const peers = {};
+let chunck = [];
 
-async function getStream() {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+async function getStream(type) {
+    console.log(type);
+    if (type === 'video') {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        return stream;
+    }
+    const stream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
     return stream;
 }
 
@@ -535,9 +544,9 @@ socket.on('user-disconnected', (userId) => {
     localStorage.removeItem('peerId');
 });
 
-function openIncomingCallWindow(roomId, user) {
+function openIncomingCallWindow(roomId, user, type) {
     console.log(roomId, user);
-    $('#callerName').text(`Incoming Video Call from ${user.username}`);
+    $('#callerName').text(`Incoming ${type.toLowerCase()} call from ${user.username}`);
     const callerImg = document.createElement('img');
     callerImg.src = user.user_img;
     callerImg.style.width = '100%';
@@ -546,14 +555,21 @@ function openIncomingCallWindow(roomId, user) {
 
     $('#acceptCallBtn').on('click', async (e) => {
         e.preventDefault();
-        socket.emit('call answered', { roomId });
-        const stream = await getStream();
-        const myVideo = document.createElement('video');
-        addVideoStream(myVideo, stream);
+        if(type === 'video') {
+            const stream = await getStream(type);
+            const myVideo = document.createElement('video');
+            addVideoStream(myVideo, stream);
+            $('#incomingCallModal').modal('toggle');
+            socket.emit('call answered', { roomId, type });
+            return;
+        }
+        const stream = await getStream(type);
+        converToAudio(stream);
         $('#incomingCallModal').modal('toggle');
+        socket.emit('call answered', { roomId, type });
     });
 
-    $('#acceptCallBtn').on('click', (e) => {
+    $('#declineCallBtn').on('click', (e) => {
         e.preventDefault();
         socket.emit('call declined', { roomId });
         $('#incomingCallModal').modal('toggle');
@@ -563,56 +579,103 @@ function openIncomingCallWindow(roomId, user) {
 
 socket.on('incoming call', (data) => {
     console.log(data);
-    openIncomingCallWindow(data.roomId, data.user);
+    openIncomingCallWindow(data.roomId, data.user, data.type);
 });
 
 socket.on('call answered', async (data) => {
+    console.log(data);
     const userPeerId = localStorage.getItem('peerId');
-    const stream = await getStream();
-    connectToNewUser(userPeerId, stream);
+    const stream = await getStream(data.type);
+    localStorage.setItem('callType', data.type);
+    connectToNewUser(userPeerId, stream, data.type);
 });
 
 myPeer.on('call', async call => {
-    const loggedInUser = JSON.parse(sessionStorage.getItem('user'));
-    console.log('Call initiated by ', loggedInUser.username);
-    const stream = await getStream();
+    const stream = await getStream(localStorage.getItem('callType'));
     call.answer(stream);
-    const video = document.createElement('video');
     call.on('stream', userVideoStream => {
-        addVideoStream(video, userVideoStream);
+        if(localStorage.getItem('callType') === 'video') {
+            console.log('from on call listener function: ', userVideoStream);
+            const video = document.createElement('video');
+            addVideoStream(video, userVideoStream);
+            return;
+        }
+        converToAudio(userVideoStream);
     });
 });
 
-async function startVideoCall(roomId) {
-    const myVideo = document.createElement('video');
-    myVideo.muted = false;
-    const stream = await getStream();
-    console.log(stream);
-    // emit new call to user
-    addVideoStream(myVideo, stream, roomId);
+async function startCall(roomId, type) {
+    const loggedInUser = JSON.parse(sessionStorage.getItem('user'));
+    if (type === 'video') {
+        console.log('type is video');
+        const myVideo = document.createElement('video');
+        myVideo.muted = false;
+        const stream = await getStream(type);
+        console.log(stream);
+        // emit new call to user
+        addVideoStream(myVideo, stream);
+        socket.emit('call user', { roomId, user: loggedInUser, type });
+        return;
+    }
+    const stream = await getStream(type);
+    converToAudio(stream);
+    socket.emit('call user', { roomId, user: loggedInUser, type });
 }
 
-function addVideoStream(video, stream, roomId) {
+function addVideoStream(video, stream) {
     video.srcObject = stream;
     video.addEventListener('loadedmetadata', () => {
         video.play();
     });
     videoGrid.append(video);
-    const loggedInUser = JSON.parse(sessionStorage.getItem('user'));
-    socket.emit('call user', { roomId, user: loggedInUser });
 }
 
-async function connectToNewUser(userId, stream) {
-    console.log(userId, stream);
+
+async function converToAudio(stream) {
+    const mediaRecorder = new MediaRecorder(stream);
+    const audio = new Audio();
+    audio.crossOrigin = 'anonymous';
+    mediaRecorder.start();
+    mediaRecorder.ondataavailable = handleDataAvailable;
+    const blob = new Blob(chunck, { 'type': 'audio/ogg; codecs=opus' });
+    chunck = [];
+    const audioURL = window.URL.createObjectURL(blob);
+    console.log(blob, audio, audioURL);
+    audio.src = audioURL;
+    console.log('audio will play now');
+    try {
+        const audioIsPlaying = await audio.play();
+        console.log(audioIsPlaying);   
+    } catch (error) {
+        console.log(error);
+    }
+}
+
+async function connectToNewUser(userId, stream, type) {
+    console.log(userId, stream, type);
     const call = myPeer.call(userId, stream);
-    const video = document.createElement('video');
-    call.on('stream', userVideoStream => {
-        console.log('call streaming', userVideoStream);
-        addVideoStream(video, userVideoStream);
+    if(type === 'video') {
+        const video = document.createElement('video');
+        call.on('stream', userVideoStream => {
+            console.log('call streaming', userVideoStream);
+            addVideoStream(video, userVideoStream);
+        });
+        return;
+    }
+
+    call.on('stream', userAudioStream => {
+        console.log('call streaming', userAudioStream);
+        converToAudio(userAudioStream);
     });
     call.on('close', () => {
         video.remove();
     });
 
     peers[userId] = call;
+}
+
+function handleDataAvailable(event) {
+    if (event.data.size > 0) {
+        chunck.push(event.data);
+    }
 }

@@ -652,16 +652,16 @@ io.on('connection', socket => {
     }
   });
 
-  socket.on('call user', async ({roomId, user }) => {
+  socket.on('call user', async ({roomId, user, type }) => {
     console.log('call data: ', roomId, user);
     const sockets = await io.in(roomId).fetchSockets();
     console.log(sockets.length);
-    socket.broadcast.to(roomId).emit('incoming call', { roomId, user });
+    socket.broadcast.to(roomId).emit('incoming call', { roomId, user, type });
   });
 
   socket.on('call answered', function(data) {
     console.log('call data: ', data);
-    socket.broadcast.to(data.roomId).emit('call answered', { roomId: data.roomId });
+    socket.broadcast.to(data.roomId).emit('call answered', { roomId: data.roomId, type: data.type });
   });
 
 });
