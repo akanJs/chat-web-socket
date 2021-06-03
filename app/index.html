@@ -12,19 +12,19 @@
     <div class="login" id="login">
         <input id="login_name" placeholder="Username">
         <input type="password" id="login_pass" placeholder="Password" value="regEx">
-        <button onClick="login()">Login</button>
+        <button type="button" id="loginBtn">Login</button>
     </div>
 
     <div id="after-login" style="display:none">
         <h1 id="me"></h1>
         <div id="search-groups">
             <input type="text" placeholder="search groups" id="groupName">
-            <button onclick="searchGroup()">Search</button>
+            <button type="button" id="searchBtn">Search</button>
         </div>
         <div id="search-group-result"></div>
         <div id="user-list" class="user-list"></div>
         <div id="group-list" class="group-list"></div>
-        <p id="create-group" onclick="openAddGroupWindow()">Create Group</p>
+        <p id="create-group">Create Group</p>
         <div id="video-grid"></div>
         <!-- Modal -->
         <div class="modal fade" id="incomingCallModal" tabindex="-1" role="dialog" aria-labelledby="modelTitleId"
@@ -50,7 +50,7 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.0.1/dist/js/bootstrap.min.js"></script>
-    <script src="/bower_components//socket.io-client/dist/socket.io.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.0.0/crypto-js.min.js"></script>
     <script src="js/chat.js"></script>
 </body>

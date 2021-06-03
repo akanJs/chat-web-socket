@@ -18,7 +18,6 @@ myPeer.on('open', id => {
 
 });
 
-
 const login = () => {
     let username = $('#login_name').val();
     let password = $('#login_pass').val();
@@ -60,6 +59,8 @@ const login = () => {
     });
 };
 
+$('#loginBtn').on('click', login);
+
 const searchGroup = () => {
     const groupName = $('#groupName').val().trim();
     $.ajax({
@@ -88,6 +89,8 @@ const searchGroup = () => {
         }
     });
 };
+
+$('#searchBtn').on('click', searchGroup);
 
 const requestToJoinGroup = (group_id, user_id) => {
     console.log(group_id, user_id);
@@ -251,6 +254,8 @@ const openAddGroupWindow = () => {
         </div>
         `);
 };
+
+$('#create-group').on('click', openAddGroupWindow);
 
 // open group window
 const openGroupWindow = (group_id, group_name, groupId) => {
