@@ -252,7 +252,7 @@ io.on('connection', socket => {
         socket.emit('updateGroupsList', { groups });
       } catch (error) {
         logger.error(error);
-        cb(error, null);
+        cb({error: error.message }, null);
       }
     }
 

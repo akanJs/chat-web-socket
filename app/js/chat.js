@@ -41,9 +41,12 @@ const login = () => {
                          `);
 
                 const id = localStorage.getItem('peerId');
-                socket.emit('loggedin', { user: resp.data, peerId: id }, function (err) {
-                    alert('An error occured');
-                    console.log(err);
+                socket.emit('loggedin', { user: resp.data, peerId: id }, function (err, data) {
+                    if(err) {
+                        alert('An error occured');
+                        return;
+                    }
+                    console.log(data);
                 });
                 return;
             }
