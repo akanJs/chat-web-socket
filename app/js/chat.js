@@ -1,4 +1,5 @@
 // jshint esversion:9
+
 const socket = io({
     transports: ['websocket']
 });
@@ -8,7 +9,10 @@ const myPeer = new Peer(undefined, {
     port: '3001'
 });
 
+console.log('peer id: ', myPeer.id);
+
 myPeer.on('open', id => {
+    console.log('peer: ', id);
     // store user peerId to localstorage
     localStorage.setItem('peerId', id);
 
@@ -100,7 +104,14 @@ const requestToJoinGroup = (group_id, user_id) => {
     });
 };
 
-const sendMyMessage = (chatWidowId, fromUser, message) => {
+/**
+ * 
+ * @param {string} chatWidowId 
+ * @param {object} fromUser 
+ * @param {string} message 
+ */
+const pushMyMessage = (chatWidowId, fromUser, message) => {
+    console.log(chatWidowId, fromUser, message);
     let loggedInUser = { ...JSON.parse(sessionStorage.getItem('user')) };
     let meClass = loggedInUser.user_id == fromUser.user_id ? 'me' : '';
 
@@ -114,19 +125,45 @@ const sendMyMessage = (chatWidowId, fromUser, message) => {
             </div>
         </div>
     `);
+    console.log('chat room does not exist')
 };
 
 // Send message
-const sendMessage = (room) => {
+const sendMessage = (room, to_id) => {
     let loggedInUser = JSON.parse(sessionStorage.getItem('user'));
     let message = $('#' + room).find('.messageText').val();
     $('#' + room).find('.messageText').val('');
-    socket.emit('message', {
-        room: room,
-        message: message,
-        from: loggedInUser
+
+    // Get cryptojs keys
+    socket.emit('getenckeys', {}, (err, resp) => {
+        if (err) {
+            console.log(err);
+            return;
+        }
+        // destructure keys
+        const { k1, k2 } = resp;
+        const rabbitEnc = CryptoJS.Rabbit.encrypt(message, k2).toString();
+        const encryptedMessage = CryptoJS.AES.encrypt(rabbitEnc, k1).toString();
+        console.log(encryptedMessage);
+        // Send message to backend
+        socket.emit('message', {
+            room: room,
+            message: encryptedMessage,
+            from_id: loggedInUser ? loggedInUser.user_id : null,
+            to_id
+        }, function (err, msg) {
+            if (err) {
+                console.log(err);
+                return;
+            }
+            console.log('message sent: ', msg);
+            const { message_text } = msg;
+            const rabbitEnc = CryptoJS.AES.decrypt(message_text, k1).toString(CryptoJS.enc.Utf8);
+            const decryptedMessage = CryptoJS.Rabbit.decrypt(rabbitEnc, k2).toString(CryptoJS.enc.Utf8);
+            console.log('decrypted message: ', decryptedMessage);
+            pushMyMessage(room, loggedInUser, decryptedMessage);
+        });
     });
-    sendMyMessage(room, loggedInUser, message);
 };
 
 // Group Messages
@@ -149,30 +186,51 @@ const sendGroupMessage = (group_id) => {
         console.log('73: ', responseData);
     });
 };
-
-
 // Open chat screen
-const openChatWindow = (room, username) => {
-    console.log(room, username);
-    console.log('openChatWindow: ', {
-        room
+const openChatWindow = (room, from) => {
+    const loggedInUser = JSON.parse(sessionStorage.getItem('user'));
+    socket.emit('getmessages', {
+        from_id: from.user_id,
+        to_id: loggedInUser ? loggedInUser.user_id : null,
+        room_id: room
+    }, (err, data) => {
+        if (err) {
+            console.log(err);
+            return;
+        }
+        console.log(data);
+        if ($(`#${room}`).length === 0) {
+            $('#after-login').append(`
+            <div class="chat-window" id="${room}">
+                <div class="chat_with_user">
+                    <h3 id="${from.user_id}">${from.username}
+                        <small onclick="startCall('${room}', '${from.peerId}', 'video')">(video call)</small>
+                        <small onclick="startCall('${room}', '${from.peerId}' 'audio')">(Voice call)</small>
+                    </h3>
+                </div>
+                <div class="body"></div>
+                <div class="footer">
+                    <input type="text" class="messageText"/><button onclick="sendMessage('${room}', '${from.user_id}')">GO</button>
+                </div>
+            </div>
+            `);
+        }
+        socket.emit('getenckeys', {}, (errr, respData) => {
+            if (errr) {
+                console.log(errr);
+                return;
+            }
+            const { k1, k2 } = respData;
+            data.messages.forEach((msg) => {
+                console.log('message sent: ', msg);
+                const { message_text } = msg;
+                const rabbitEnc = CryptoJS.AES.decrypt(message_text, k1).toString(CryptoJS.enc.Utf8);
+                const decryptedMessage = CryptoJS.Rabbit.decrypt(rabbitEnc, k2).toString(CryptoJS.enc.Utf8);
+                console.log('decrypted message: ', decryptedMessage);
+                pushMyMessage(msg.room_id.room_id, msg.from_id, decryptedMessage);
+            });
+        });
     });
-    if ($(`#${room}`).length === 0) {
-        $('#after-login').append(`
-        <div class="chat-window" id="${room}">
-            <div class="chat_with_user">
-                <h3>${username}
-                    <small onclick="startCall('${room}', 'video')">(video call)</small>
-                    <small onclick="startCall('${room}', 'audio')">(Voice call)</small>
-                </h3>
-            </div>
-            <div class="body"></div>
-            <div class="footer">
-                <input type="text" class="messageText"/><button onclick="sendMessage('${room}')">GO</button>
-            </div>
-        </div>
-        `);
-    }
 };
 
 /* Group functions */
@@ -355,14 +413,14 @@ const leaveGroup = group_id => {
 
 
 // Function to create room
-const createRoom = (id, username) => {
+const createRoom = (userId, userUsername, peerId) => {
     let loggedInUser = JSON.parse(sessionStorage.getItem('user'));
     let room = Date.now() + Math.random();
     room = room.toString().replace(".", "_");
     socket.emit('create', {
         room: room,
         userId: loggedInUser.user_id,
-        withUserId: id,
+        withUserId: userId,
         isPrivate: true
     }, function (err, responseData) {
         if (err) {
@@ -370,7 +428,8 @@ const createRoom = (id, username) => {
             console.log(err);
             return;
         }
-        openChatWindow(responseData.room_id, username);
+        const userDetails = { user_id: userId, username: userUsername, peerId: peerId };
+        openChatWindow(responseData.room_id, userDetails);
     });
 };
 socket.on('updateUserList', function (userList) {
@@ -378,7 +437,7 @@ socket.on('updateUserList', function (userList) {
     $('#user-list').html('<ul></ul>');
     userList.forEach(item => {
         if (loggedInUser.user_id != item.user_id) {
-            $('#user-list ul').append(`<li data-id="${item.user_id}" onclick="createRoom('${item.user_id}', '${item.first_name}')">${item.user_full_name}</li>`);
+            $('#user-list ul').append(`<li data-id="${item.user_id}" onclick="createRoom('${item.user_id}', '${item.username}', '${item.peerId}')">${item.user_full_name}</li>`);
         }
     });
 
@@ -392,12 +451,22 @@ socket.on('message', function (msg) {
     console.log('onMessageSocket: ', {
         msg
     });
-    alert(`New message from ${msg.from.first_name}`);
+    alert(`New message from ${msg.from.username}`);
     //If chat window not opened with this roomId, open it
-    if (!$('#after-login').find(`#${msg.room}`).length) {
-        openChatWindow(msg.room, msg.from.username);
+    if ($('#after-login').find(`#${msg.room}`).length) {
+        socket.emit('getenckeys', {}, (err, resp) => {
+            if (err) {
+                console.log(err);
+                return;
+            }
+            // destructure keys
+            const { k1, k2 } = resp;
+            const rabbitEnc = CryptoJS.AES.decrypt(msg.message_text, k1).toString(CryptoJS.enc.Utf8);
+            const decryptedMessage = CryptoJS.Rabbit.decrypt(rabbitEnc, k2).toString(CryptoJS.enc.Utf8);
+            console.log('decrypted message: ', decryptedMessage);
+            pushMyMessage(msg.room, msg.from, decryptedMessage);
+        });
     }
-    sendMyMessage(msg.room, msg.from, msg.message);
 });
 
 // group socket
@@ -532,8 +601,9 @@ async function getStream(type) {
 
 const videoGrid = document.getElementById('video-grid');
 
-socket.on('user-connected', (userId) => {
+socket.on('user-connected', ({ with_user_peer_id }) => {
     console.log('user connected');
+    localStorage.setItem('with_user_peer_id', with_user_peer_id);
 
 });
 
@@ -555,11 +625,11 @@ function openIncomingCallWindow(roomId, user, type) {
 
     $('#acceptCallBtn').on('click', async (e) => {
         e.preventDefault();
-        if(type === 'video') {
+        if (type === 'video') {
             const stream = await getStream(type);
             const myVideo = document.createElement('video');
             addVideoStream(myVideo, stream);
-            $('#incomingCallModal').modal('toggle');
+            $('#incomingCallModal').modal('hide');
             socket.emit('call answered', { roomId, type });
             return;
         }
@@ -583,8 +653,8 @@ socket.on('incoming call', (data) => {
 });
 
 socket.on('call answered', async (data) => {
-    console.log(data);
-    const userPeerId = localStorage.getItem('peerId');
+    console.log('call has been answered');
+    const userPeerId = localStorage.getItem('with_user_peer_id');
     const stream = await getStream(data.type);
     localStorage.setItem('callType', data.type);
     connectToNewUser(userPeerId, stream, data.type);
@@ -593,20 +663,31 @@ socket.on('call answered', async (data) => {
 myPeer.on('call', async call => {
     const stream = await getStream(localStorage.getItem('callType'));
     call.answer(stream);
-    call.on('stream', userVideoStream => {
-        if(localStorage.getItem('callType') === 'video') {
-            console.log('from on call listener function: ', userVideoStream);
+    call.on('stream', mediaStream => {
+        if (localStorage.getItem('callType') === 'video') {
+            console.log('from on call listener function: ', mediaStream);
             const video = document.createElement('video');
-            addVideoStream(video, userVideoStream);
+            addVideoStream(video, mediaStream);
             return;
         }
-        converToAudio(userVideoStream);
+        converToAudio(mediaStream);
     });
 });
 
-async function startCall(roomId, type) {
+async function startCall(roomId, peerId, type) {
     const loggedInUser = JSON.parse(sessionStorage.getItem('user'));
     if (type === 'video') {
+
+        // navigator.getUserMedia({ video: true, audio: true }, (stream) => {
+        //     const call = myPeer.call(peerId, stream);
+        //     call.on('stream', (remoteStream) => {
+        //         alert('new video call');
+        //         const video = document.createElement('video');
+        //         addVideoStream(video, remoteStream);
+        //     });
+        // }, (err) => {
+        //     console.log('could not getStream');
+        // });
         console.log('type is video');
         const myVideo = document.createElement('video');
         myVideo.muted = false;
@@ -636,16 +717,16 @@ async function converToAudio(stream) {
     const audio = new Audio();
     audio.crossOrigin = 'anonymous';
     mediaRecorder.start();
+    chunck = [];
     mediaRecorder.ondataavailable = handleDataAvailable;
     const blob = new Blob(chunck, { 'type': 'audio/ogg; codecs=opus' });
-    chunck = [];
     const audioURL = window.URL.createObjectURL(blob);
     console.log(blob, audio, audioURL);
     audio.src = audioURL;
     console.log('audio will play now');
     try {
         const audioIsPlaying = await audio.play();
-        console.log(audioIsPlaying);   
+        console.log(audioIsPlaying);
     } catch (error) {
         console.log(error);
     }
@@ -654,18 +735,14 @@ async function converToAudio(stream) {
 async function connectToNewUser(userId, stream, type) {
     console.log(userId, stream, type);
     const call = myPeer.call(userId, stream);
-    if(type === 'video') {
-        const video = document.createElement('video');
-        call.on('stream', userVideoStream => {
-            console.log('call streaming', userVideoStream);
-            addVideoStream(video, userVideoStream);
-        });
-        return;
-    }
-
-    call.on('stream', userAudioStream => {
-        console.log('call streaming', userAudioStream);
-        converToAudio(userAudioStream);
+    call.on('stream', mediaStream => {
+        if (type === 'video') {
+            const video = document.createElement('video');
+            addVideoStream(video, mediaStream);
+            return;
+        }
+        console.log('call streaming', mediaStream);
+        converToAudio(mediaStream);
     });
     call.on('close', () => {
         video.remove();

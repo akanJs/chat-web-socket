@@ -3,18 +3,22 @@ let express = require('express');
 const path = require('path');
 const app = require('express')();
 const server = require('http').createServer(app);
-const io = require('socket.io')(server);
+const { Server } = require('socket.io');
+const io = new Server(server);
 const mongoose = require('mongoose');
 const uuid = require('uuid');
 const moment = require('moment');
 const { User } = require('./models/users.model');
 const { Group } = require('./models/group.model');
 const { Participant } = require('./models/participant.model');
-const { GroupMessage } = require('./models/message.model')
-const { PrivateRoom } = require('./models/privateRoom.model');
+const { GroupMessage, Message } = require('./models/message.model');
+const { PrivateRoom, privateRoomSchema } = require('./models/privateRoom.model');
 const { Socket } = require('./models/socket.model');
 const { Request } = require('./models/request.model');
 const winston = require('winston');
+const CryptoJs = require('crypto-js');
+
+const PORT = process.env.PORT || 8082;
 
 app.use(express.static('app'));
 app.use('/node_modules', express.static(path.join(__dirname, 'node_modules',)));
@@ -47,8 +51,10 @@ if (process.env.NODE_ENV !== 'production') {
 let clientSocketIds = [];
 let connectedUsers = [];
 
+console.log(process.env.MONGO_URI_USER);
+console.log(process.env.MONGO_URI_PWD);
 // mongoose initialization
-mongoose.connect('mongodb://localhost:27017/ChatDB', {
+mongoose.connect(process.env.NODE_ENV === 'production' ? `mongodb+srv://${process.env.MONGO_URI_USER}:${process.env.MONGO_URI_PWD}@cluster0.ok9ep.mongodb.net/ChatSocketDB?retryWrites=true&w=majority` : 'mongodb://localhost:27017/ChatDB', {
   useNewUrlParser: true,
   useFindAndModify: false,
   useUnifiedTopology: true,
@@ -166,6 +172,7 @@ const getSocketByUserId = (userId) => {
 /* socket function starts */
 io.on('connection', socket => {
   logger.info('conected');
+  socket.emit('connected', { message: 'Hello' });
   socket.on('disconnect', async () => {
     logger.info("disconnected");
     try {
@@ -251,6 +258,27 @@ io.on('connection', socket => {
 
   });
 
+  async function createPrivateRoom(userId, withUserId) {
+    const privateRoomData = { // new chat data
+      room_id: uuid.v4(),
+      user_id: userId,
+      with_user_id: withUserId
+    };
+    const new_chat = await PrivateRoom.create(privateRoomData); // create chat
+    return new_chat;
+  }
+
+  function sendRoomData(exisitingRoom, user, recipientUser, socket, cb) {
+    const privateRoomData = { // chat data
+      room_id: exisitingRoom.room_id,
+      user_id: user._id,
+      with_user_id: recipientUser._id
+    };
+    socket.join(exisitingRoom.room_id);
+    socket.broadcast.to(recipientUser.socket.socket).emit('invite', { room: privateRoomData }); // emit invite to receipient to join chat
+    cb(null, privateRoomData);
+  }
+
   socket.on('create', async function (data, cb) {
     logger.info(data);
     data.room = uuid.v4(); // replace room id with unique id
@@ -259,32 +287,30 @@ io.on('connection', socket => {
       try {
         const user = await User.findOne({ user_id: data.userId });
         const receipientUser = await User.findOne({ user_id: data.withUserId }).populate('socket');
-
         if (user && receipientUser) { // check if both users exists
-          const chatExists = await PrivateRoom.findOne({ user_id: user._id, with_user_id: receipientUser._id }); // check if chat exists between users
-          logger.info('204: ', chatExists);
-          if (!chatExists) { // chat does not exist
-            const privateRoomData = { // new chat data
-              room_id: uuid.v4(),
-              user_id: user._id,
-              with_user_id: receipientUser._id
-            };
-            const new_chat = await PrivateRoom.create(privateRoomData); // create chat
-            socket.join(new_chat.room_id); // join chat
-            socket.broadcast.to(receipientUser.socket.socket).emit('invite', { room: privateRoomData }); // emit invite to receipient to join chat
-            cb(null, privateRoomData);
+          const userCreatedRoom = await PrivateRoom.findOne({ user_id: user._id, with_user_id: receipientUser._id }); // check if chat exists between users
+          const userInvitedRoom = await PrivateRoom.findOne({ user_id: receipientUser._id, with_user_id: user._id });
+          console.log('user created room: ', userCreatedRoom);
+          console.log('user invited room: ', userInvitedRoom);
+          // logger.info('user created room: ', userCreatedRoom);
+          // logger.info('user invited room: ', userInvitedRoom);
+          if (!userCreatedRoom && !userInvitedRoom) { // chat does not exist
+            const privateRoom = await createPrivateRoom(user._id, receipientUser._id);
+            socket.join(privateRoom.room_id); // join chat
+            socket.broadcast.to(receipientUser.socket.socket).emit('invite', { room: privateRoom }); // emit invite to receipient to join chat
+            cb(null, privateRoom);
+            return;
+          }
+          // chat exists
+          if (userCreatedRoom) {
+            sendRoomData(userCreatedRoom, user, receipientUser, socket, cb);
+            return;
           }
 
-          // chat exists
-          const privateRoomData = { // chat data
-            room_id: chatExists.room_id,
-            user_id: user._id,
-            with_user_id: receipientUser._id
-          };
-          socket.join(chatExists.room_id);
-          socket.broadcast.to(receipientUser.socket.socket).emit('invite', { room: privateRoomData }); // emit invite to receipient to join chat
-          cb(null, privateRoomData);
-          return;
+          if (userInvitedRoom) {
+            sendRoomData(userInvitedRoom, user, receipientUser, socket, cb);
+            return;
+          }
         }
 
         cb({ error: 'both users do not exist' });
@@ -345,24 +371,185 @@ io.on('connection', socket => {
     }
   });
 
-  socket.on('joinRoom', function (data) {
+  socket.on('joinRoom', async function (data) {
     logger.info('280: ', data);
     socket.join(data.room.room_id);
+    const user = await User.findById(data.room.user_id);
+    const withUser = await User.findById(data.room.with_user_id);
+    socket.broadcast.to(data.room.room_id).emit('user-connected', { with_user_peer_id: withUser.peerId });
+    socket.on('disconnect', () => {
+      console.log('disconnected');
+      socket.broadcast.to(data.room.room_id).emit('user-disconnected', user.peerId);
+    });
   });
 
   socket.on('join-video', (roomId, userId) => {
     console.log(roomId, userId);
-    console.log('Socket: ', socket.broadcast);
-    socket.broadcast.to(roomId).emit('user-connected', userId);
-    socket.on('disconnect', () => {
-      console.log('disconnected');
-      socket.broadcast.to(roomId).emit('user-disconnected', userId);
-    });
   });
 
-  socket.on('message', function (data) {
-    logger.info('message data', data);
-    socket.broadcast.to(data.room).emit('message', data);
+  /**
+   * Socket function to get all messages
+  */
+
+  socket.on('getmessages',
+    /**
+     * @param {{from_id: string, room_id: string, to_id: string}} data
+     * @param {Function} cb
+    */
+    async (data, cb) => {
+      const { from_id, to_id, room_id } = data;
+      if (from_id === to_id) {
+        const error = new Error('sender and recipient cannot be the same');
+        cb({ error: error.message }, false);
+        return;
+      }
+      try {
+        const user = await User.findOne({ user_id: from_id });
+        const recipientUser = await User.findOne({ user_id: to_id });
+        const userCreatedRoom = await PrivateRoom.findOne({ room_id, user_id: user._id, with_user_id: recipientUser._id });
+        const userInvitedRoom = await PrivateRoom.findOne({ room_id, user_id: recipientUser._id, with_user_id: user._id });
+        if (!userCreatedRoom && !userInvitedRoom) {
+          const error = new Error('no such room');
+          cb({ error: error.message }, false);
+          return;
+        }
+        if (user && recipientUser) {
+          if (userCreatedRoom) {
+            const messages = await Message.find({ room_id: userCreatedRoom._id }).populate('from_id to_id room_id');
+            console.log('messages: ', messages);
+            if (messages) {
+              // Decrypt messages
+              cb(null, { messages: messages });
+              return;
+            }
+            const error = new Error('no messages between users');
+            cb({ error: error.message }, false);
+            return;
+          }
+          if (userInvitedRoom) {
+            const messages = await Message.find({ room_id: userInvitedRoom._id }).populate('from_id to_id room_id');
+            if (messages) {
+              // Decrypt messages
+              cb(null, { messages });
+              return;
+            }
+            const error = new Error('no messages between users');
+            cb({ error: error.message }, false);
+            return;
+          }
+        }
+      } catch (error) {
+        console.log(error.message);
+        cb({ error: 'an error occured' }, false);
+        return;
+      }
+    });
+
+
+  /**
+   * Socket function for sending messages 
+  */
+  socket.on('message',
+    /**
+     * @param {{from_id: string, to_id: string, message: string, room: string}} data
+     */
+    async function (data, cb) {
+      const {
+        from_id,
+        message,
+        to_id,
+        room
+      } = data;
+      console.log(from_id, to_id, message, room);
+      if (from_id === to_id) {
+        const error = new Error('sender and recipient cannot be the same');
+        cb({ error: error.message }, false);
+        return;
+      }
+      console.log('Encrypted message: ', message);
+      // decrypt message
+      const rabbitEnc = CryptoJs.AES.decrypt(message, process.env.AES_CRYPTO_SECRET).toString(CryptoJs.enc.Utf8);
+      const decryptedMessage = CryptoJs.Rabbit.decrypt(rabbitEnc, process.env.RABBIT_CRYPTO_SECRET).toString(CryptoJs.enc.Utf8);
+      console.log('decrypted message: ', decryptedMessage);
+      // save message in db or something
+      const user = await User.findOne({ user_id: from_id });
+      const recipientUser = await User.findOne({ user_id: to_id });
+      const chatRoom = await PrivateRoom.findOne({ room_id: room });
+      if (user && recipientUser && chatRoom) {
+        const recipientSocket = await Socket.findOne({ user_id: recipientUser._id });
+        if (recipientSocket) {
+          const message_data = {
+            message_id: uuid.v4(),
+            from_id: user._id,
+            to_id: recipientUser._id,
+            room_id: chatRoom._id,
+            message_text: message,
+          };
+          const new_message = await (await Message.create(message_data)).execPopulate({
+            path: 'from_id to_id room_id'
+          });
+          if (new_message) {
+            // send back encrypted message
+            // @ts-ignore
+            const randomObject = {
+              name: 'Akan',
+              age: 21
+            };
+            delete randomObject.age;
+            const result = { ...new_message._doc };
+            delete result.from_id._doc.password;
+            delete result.to_id._doc.password;
+            console.log(result.from_id, randomObject);
+            const finalResult = {
+              message_id: result.message_id,
+              from: result.from_id,
+              to: result.to_id,
+              room: result.room_id.room_id,
+              message_text: result.message_text
+            };
+            io.to(recipientSocket.socket).emit('message', finalResult);
+            cb(null, new_message);
+          }
+        }
+      }
+      const error = new Error('no such users or room');
+      cb({ error: error.message }, null);
+    });
+
+  /**
+   * Socket function for editing messages 
+  */
+
+  socket.on('editmessage',
+    /** 
+   * @param {{from_id: string, to_id: string, message: string, message_id: string}} data
+   * @param {Function} cb
+  */
+    async (data, cb) => {
+      console.log(data);
+      const { message_id, to_id } = data;
+      const recipientUser = await User.findOne({ user_id: to_id });
+      const recipientSocket = await Socket.findOne({ user_id: recipientUser._id });
+      if (recipientUser && recipientSocket) {
+        const messageUpdate = await Message.findOneAndUpdate({ message_id }, { message_text: data.message });
+        // @ts-ignore
+        console.log(messageUpdate.message_text);
+        if (messageUpdate) {
+          cb(null, { messageUpdate: data.message });
+          socket.broadcast.to(recipientSocket.socket).emit('editmessage', { messageUpdate: data.message });
+          return;
+        }
+      }
+      const error = new Error('recipient does not exist');
+      cb(error, false);
+      return;
+    });
+
+  socket.on('getenckeys', (data, cb) => {
+    console.log(data);
+    const k1 = process.env.AES_CRYPTO_SECRET;
+    const k2 = process.env.RABBIT_CRYPTO_SECRET;
+    cb(null, { k1, k2 });
   });
 
   /* GROUP CHAT SOCKET */
@@ -428,10 +615,10 @@ io.on('connection', socket => {
         // Find if user exists in group
         const userExistsInGroup = await Participant.findOne({ group_id: group._id, participant: user._id }).populate('participant group_id');
         logger.info('269: ', userExistsInGroup);
-          if (userExistsInGroup) {
-            cb({ error: 'user exists in group' }, null);
-            return;
-          }
+        if (userExistsInGroup) {
+          cb({ error: 'user exists in group' }, null);
+          return;
+        }
 
         // Verify if participant is an admin
         const participantIsAdmin = await Participant.findOne({ group_id: group._id, participant: adminUser._id, isAdmin: true });
@@ -592,7 +779,7 @@ io.on('connection', socket => {
     }
   });
 
-  socket.on('makeParticipantAdmin', async function(data, cb) {
+  socket.on('makeParticipantAdmin', async function (data, cb) {
     try {
       const group = await Group.findById(data.group_id);
       const participant = await Participant.findOne({ participant_id: data.participant_id, group_id: group._id });
@@ -601,17 +788,17 @@ io.on('connection', socket => {
       logger.info(adminParticipant);
       logger.info(group);
       logger.info(participant);
-      if(group && participant && adminParticipant) {
+      if (group && participant && adminParticipant) {
         try {
           // update participant admin status
           const updatedParticipant = await Participant.findByIdAndUpdate(participant._id, { isAdmin: !participant.isAdmin }).populate('group_id');
-          if(updatedParticipant) {
+          if (updatedParticipant) {
             updatedParticipant.isAdmin = !updatedParticipant.isAdmin;
-            if(updatedParticipant.isAdmin) {
+            if (updatedParticipant.isAdmin) {
               cb(null, updatedParticipant);
               return;
             }
-            cb(null, { updatedParticipant, message: 'User is no longer an admin' })
+            cb(null, { updatedParticipant, message: 'User is no longer an admin' });
             return;
           }
         } catch (error) {
@@ -621,24 +808,24 @@ io.on('connection', socket => {
       }
       cb({ error: 'No user or group or admin' }, null);
     } catch (error) {
-      
+
     }
   });
 
-  socket.on('leaveGroup', async function(data, cb) {
+  socket.on('leaveGroup', async function (data, cb) {
     try {
       const group = await Group.findOne({ group_id: data.group_id });
       const participant = await Participant.findOne({ group_id: group._id, participant: data.user_id }).populate('participant')
 
-      if(group && participant) {
+      if (group && participant) {
         const deletedParticipant = await Participant.findByIdAndDelete(participant._id);
         const request = await Request.findOne({ user: data.user_id, group: group._id });
         logger.info(`user request ${request}`);
         logger.info(deletedParticipant);
-        if(deletedParticipant) {
-          if(request) {
+        if (deletedParticipant) {
+          if (request) {
             const deleteRequest = await Request.findByIdAndDelete(request._id);
-            if(deleteRequest) {
+            if (deleteRequest) {
               logger.info(`Request has been deleted: ${deleteRequest}`);
             }
           }
@@ -648,18 +835,18 @@ io.on('connection', socket => {
         }
       }
     } catch (error) {
-      
+
     }
   });
 
-  socket.on('call user', async ({roomId, user, type }) => {
+  socket.on('call user', async ({ roomId, user, type }) => {
     console.log('call data: ', roomId, user);
     const sockets = await io.in(roomId).fetchSockets();
     console.log(sockets.length);
     socket.broadcast.to(roomId).emit('incoming call', { roomId, user, type });
   });
 
-  socket.on('call answered', function(data) {
+  socket.on('call answered', function (data) {
     console.log('call data: ', data);
     socket.broadcast.to(data.roomId).emit('call answered', { roomId: data.roomId, type: data.type });
   });
@@ -667,6 +854,6 @@ io.on('connection', socket => {
 });
 /* socket function ends */
 
-server.listen(8082, function () {
+server.listen(PORT, function () {
   logger.info("server started");
 });

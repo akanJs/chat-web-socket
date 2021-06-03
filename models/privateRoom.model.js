@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 const { Types } = require('mongoose');
 
-const privateRoomSchema = mongoose.Schema({
+const privateRoomSchema = new mongoose.Schema({
   room_id: {
     type: String,
     required: true

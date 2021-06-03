@@ -38,12 +38,12 @@ h3 {
 }
 
 .chat-window {
-    width: 230px;
-    height: 330px;
+    width: auto;
+    height: fit-content;
     border: 1px solid #ccc;
-    display: inline-block;
+    display: block;
     padding: 5px;
-    position: relative;
+    position: unset;
 }
 
 .chat-window .head {

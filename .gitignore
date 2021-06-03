@@ -1,4 +1,14 @@
+# dependencies
 /node_modules
 /structure
+/app/bower_components
+
+# logs
 combined.log
 error.log
+
+# env
+.env
+
+#debug 
+.vscode
