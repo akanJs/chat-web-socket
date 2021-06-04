@@ -112,17 +112,6 @@ const likeMessage = (message_id) => {
 			console.log(err);
 			return;
 		}
-		const { likeStatus } = data;
-		const messageParentEl = document.getElementById(message_id).parentElement;
-		for(let el of messageParentEl.children) {
-			console.log(el.innerHTML);
-			if(el.innerHTML === '(like)' || el.innerHTML === '(unlike)') {
-				console.log(likeStatus);
-				el.innerHTML = likeStatus ? '(unlike)' : '(like)';
-				break;
-			}
-		}
-
 	});
 };
 
@@ -147,7 +136,7 @@ const requestToJoinGroup = (group_id, user_id) => {
  * @param {object} fromUser 
  * @param {string} message 
  */
-const pushMyMessage = (chatWidowId, fromUser, message, message_id = null) => {
+const pushMyMessage = (chatWidowId, fromUser, message, message_id = null, likeStatus = false) => {
 	console.log(chatWidowId, fromUser, message);
 	let loggedInUser = { ...JSON.parse(sessionStorage.getItem('user')) };
 	let meClass = loggedInUser.user_id == fromUser.user_id ? 'me' : '';
@@ -160,7 +149,7 @@ const pushMyMessage = (chatWidowId, fromUser, message, message_id = null) => {
             <div>
                 <span id="${message_id}" class="message">${message}</span>
 								<span onclick="setMessageParams('${'edit'}', '${message_id}')" style="font-size: 10px">(edit)</span>
-								<span onclick="likeMessage('${message_id}')" style="font-size: 10px">(like)</span>
+								<span onclick="likeMessage('${message_id}')" style="font-size: 10px">${likeStatus ? '(unlike)' : '(like)'}</span>
 								<span onclick="setMessageParams('${'reply'}', '${message_id}')" style="font-size: 10px">(reply)</span>
 								<span onclick="delete('${message_id}')" style="font-size: 10px">(delete)</span>
             </div>
@@ -292,7 +281,7 @@ const openChatWindow = (room, from) => {
 				const rabbitEnc = CryptoJS.AES.decrypt(message_text, k1).toString(CryptoJS.enc.Utf8);
 				const decryptedMessage = CryptoJS.Rabbit.decrypt(rabbitEnc, k2).toString(CryptoJS.enc.Utf8);
 				console.log('decrypted message: ', decryptedMessage);
-				pushMyMessage(msg.room_id.room_id, msg.from_id, decryptedMessage, msg.message_id);
+				pushMyMessage(msg.room_id.room_id, msg.from_id, decryptedMessage, msg.message_id, msg.liked);
 			});
 		});
 	});
@@ -533,6 +522,19 @@ socket.on('message', function (msg) {
 			console.log('decrypted message: ', decryptedMessage);
 			pushMyMessage(msg.room, msg.from, decryptedMessage, msg.message_id);
 		});
+	}
+});
+
+socket.on('likemessage', (data) => {
+	const { likeStatus, message_id } = data;
+	const messageParentEl = document.getElementById(message_id).parentElement;
+	for(let el of messageParentEl.children) {
+		console.log(el.innerHTML);
+		if(el.innerHTML === '(like)' || el.innerHTML === '(unlike)') {
+			console.log(likeStatus);
+			el.innerHTML = likeStatus ? '(unlike)' : '(like)';
+			break;
+		}
 	}
 });
 

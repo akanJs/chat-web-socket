@@ -22,6 +22,8 @@ const CryptoJs = require('crypto-js');
 
 const PORT = process.env.PORT || 8082;
 
+console.log(process.env.NODE_ENV);
+
 app.use(express.static('app'));
 app.use('/node_modules', express.static(path.join(__dirname, 'node_modules',)));
 app.use(express.json());
@@ -53,14 +55,17 @@ if (process.env.NODE_ENV !== 'production') {
 let clientSocketIds = [];
 let connectedUsers = [];
 
-console.log(process.env.MONGO_URI_USER);
-console.log(process.env.MONGO_URI_PWD);
+console.log(process.env.NODE_ENV === 'production');
 // mongoose initialization
 mongoose.connect(process.env.NODE_ENV === 'production' ? `mongodb+srv://${process.env.MONGO_URI_USER}:${process.env.MONGO_URI_PWD}@cluster0.ok9ep.mongodb.net/ChatSocketDB?retryWrites=true&w=majority` : 'mongodb://localhost:27017/ChatDB', {
   useNewUrlParser: true,
   useFindAndModify: false,
   useUnifiedTopology: true,
   autoIndex: false
+}).then((db) => {
+  console.log('db connected successfully');
+}).catch((err) => {
+  console.log('Error connecting to db: ', err);
 });
 
 app.post('/register', async (req, res) => {
@@ -254,7 +259,7 @@ io.on('connection', socket => {
         socket.emit('updateGroupsList', { groups });
       } catch (error) {
         logger.error(error);
-        cb({error: error.message }, null);
+        cb({ error: error.message }, null);
       }
     }
 
@@ -445,7 +450,7 @@ io.on('connection', socket => {
         cb({ error: 'an error occured' }, false);
         return;
       }
-  });
+    });
 
 
   /**
@@ -516,7 +521,7 @@ io.on('connection', socket => {
       }
       const error = new Error('no such users or room');
       cb({ error: error.message }, null);
-  });
+    });
 
   /**
    * Socket function for editing messages 
@@ -527,11 +532,12 @@ io.on('connection', socket => {
    * @param {(error: *, data: *) => void} cb
   */
     async (data, cb) => {
+      console.log('edit data: ', data);
       const { message_id, to_id, message, from_id } = data;
       const messageIsEncrypted = CryptoJs.AES.decrypt(message, process.env.AES_CRYPTO_SECRET);
       console.log(messageIsEncrypted.toString(CryptoJs.enc.Utf8));
 
-      if(!message_id || !to_id || !message || !from_id) {
+      if (!message_id || !to_id || !message || !from_id) {
         cb({ error: 'one or more params missing' }, false);
         return;
       }
@@ -539,26 +545,26 @@ io.on('connection', socket => {
       const user = await User.findOne({ user_id: from_id });
       const recipientUser = await User.findOne({ user_id: to_id });
 
-      if(!user && !recipientUser) {
-        cb({ error:  'invalid user ids'}, false);
+      if (!user && !recipientUser) {
+        cb({ error: 'invalid user ids' }, false);
         return;
       }
       // find users room
       const userCreatedRoom = await PrivateRoom.findOne({ user_id: user._id, with_user_id: recipientUser._id });
       const userInvitedRoom = await PrivateRoom.findOne({ user_id: recipientUser._id, with_user_id: user._id });
-      if(!userCreatedRoom && !userInvitedRoom) {
-        cb({ error:  'no such rooms'}, false);
+      if (!userCreatedRoom && !userInvitedRoom) {
+        cb({ error: 'no such rooms' }, false);
         return;
       }
-      if(userCreatedRoom) {
+      if (userCreatedRoom) {
         const recipientSocket = await Socket.findOne({ user_id: recipientUser._id });
         if (recipientSocket) {
           const messageUpdate = await Message.findOneAndUpdate({ message_id }, { message_text: message, edited: true });
           console.log(messageUpdate);
           // @ts-ignore
-          messageUpdate.edited = true;
-          messageUpdate.message_text = message;
           if (messageUpdate) {
+            messageUpdate.edited = true;
+            messageUpdate.message_text = message;
             cb(null, messageUpdate);
             socket.broadcast.to(recipientSocket.socket).emit('editmessage', { messageUpdate: messageUpdate });
             return;
@@ -568,94 +574,99 @@ io.on('connection', socket => {
         cb(error, false);
         return;
       }
-  });
+    });
 
   /**
    * socket function to like a message
    */
   socket.on('likemessage',
-  /**
-   * 
-   * @param {{message_id: string}} data 
-   * @param {(err: *, data: *) => void} cb
-   */
-  async (data, cb) => {
-    const { message_id } = data;
-    if(!message_id) {
-      const error = new Error('missing message id');
-      cb({ error }, false);
-      return;
-    }
-    try {
-      const message = await Message.findOne({ message_id });
-      if(!message) {
-        const error = new Error('invalid message id');
+    /**
+     * 
+     * @param {{message_id: string}} data 
+     * @param {(err: *, data: *) => void} cb
+     */
+    async (data, cb) => {
+      const { message_id } = data;
+      console.log(message_id);
+      if (!message_id) {
+        const error = new Error('missing message id');
         cb({ error }, false);
         return;
       }
+      try {
+        const message = await Message.findOne({ message_id });
+        const userSocket = await Socket.findOne({ user_id: message.from_id });
+        const recipientSocket = await Socket.findOne({ user_id: message.to_id });
+        if (!message) {
+          const error = new Error('invalid message id');
+          cb({ error }, false);
+          return;
+        }
 
-      const likeMessage = await Message.findByIdAndUpdate(message._id, { liked: !message.liked });
-      if(!likeMessage) {
-        const error = new Error('could not like message');
-        cb({ error }, false);
+        const likeMessage = await Message.findByIdAndUpdate(message._id, { liked: !message.liked });
+        if (!likeMessage) {
+          const error = new Error('could not like message');
+          cb({ error }, false);
+          return;
+        }
+        const likeStatus = !likeMessage.liked;
+        io.to(userSocket.socket).emit('likemessage', { likeStatus, message_id });
+        io.to(recipientSocket.socket).emit('likemessage', { likeStatus, message_id });
+
+      } catch (error) {
+        console.log(error.message);
+        cb({ error: error.message }, false);
         return;
       }
-      cb(false,  { likeStatus: !likeMessage.liked });
-
-    } catch (error) {
-      console.log(error.message);
-      cb({ error: error.message }, false);
-      return;
-    }
-  });
+    });
 
   /**
    * socket function to delete a message
    */
   socket.on('deletemessage',
-  /**
-   * 
-   * @param {{message_id: string}} data 
-   * @param {(error: *, data: *) => void} cb 
-   */
-  async (data, cb) => {
-    const { message_id } = data;
-    if(!message_id) {
-      cb({error: 'missing message id'}, false);
-      return;
-    }
-    const deletedMessage = await Message.findOneAndDelete({ message_id });
-    if(!deletedMessage) {
-      cb({ error: 'invalid message id' }, false);
-      return;
-    }
-    cb(false, { deleteStatus: true });
-    return;
-  });
-
-  socket.on('replymessage',
-  /**
-   * 
-   * @param {{message_id: string}} data 
-   * @param {(error: *, data: *) => void} cb 
-   */
-  async (data, cb) => {
-    const { message_id } = data;
-    if(!message_id) {
-      cb({ error: 'missing message id' }, false);
-      return;
-    }
-    try {
-      const parentMessage = await Message.findOne({ message_id });
-      if(!parentMessage) {
+    /**
+     * 
+     * @param {{message_id: string}} data 
+     * @param {(error: *, data: *) => void} cb 
+     */
+    async (data, cb) => {
+      const { message_id } = data;
+      if (!message_id) {
+        cb({ error: 'missing message id' }, false);
+        return;
+      }
+      const deletedMessage = await Message.findOneAndDelete({ message_id });
+      if (!deletedMessage) {
         cb({ error: 'invalid message id' }, false);
         return;
       }
+      cb(false, { deleteStatus: true });
+      return;
+    });
 
-    } catch (error) {
-      
-    }
-  });
+  socket.on('replymessage',
+    /**
+     * 
+     * @param {{message_id: string}} data 
+     * @param {(error: *, data: *) => void} cb 
+     */
+    async (data, cb) => {
+      const { message_id } = data;
+      if (!message_id) {
+        cb({ error: 'missing message id' }, false);
+        return;
+      }
+      try {
+        const parentMessage = await Message.findOne({ message_id });
+        if (!parentMessage) {
+          cb({ error: 'invalid message id' }, false);
+          return;
+        }
+
+      } catch (error) {
+
+      }
+    });
 
   /**
    * socket function to get encryption keys
