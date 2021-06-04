@@ -26,6 +26,23 @@ const messageSchema = new mongoose.Schema({
     ref: 'PrivateRoom',
     required: true
   },
+  edited: {
+    type: Boolean,
+    default: false
+  },
+  liked: {
+    type: Boolean,
+    default: false
+  },
+  replied: {
+    type: Boolean,
+    default: false
+  },
+  parentId: {
+    type: Types.ObjectId,
+    ref: 'Message',
+    required: false
+  },
   sent_date: {
     type: Date,
     default: new Date()

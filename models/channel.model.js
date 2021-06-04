@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 const { Types } = require('mongoose');
 
-const channelSchema = mongoose.Schema({
+const channelSchema = new mongoose.Schema({
   channel_id: {
     type: String,
     required: true

@@ -4,8 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev:install": "npm i peerjs -g && peerjs --port 3001",
-    "start": "concurrently \"npm run dev:install\" \"nodemon -r dotenv/config server.js\"",
+    "start": "concurrently \"peerjs --port 3001\" \"nodemon -r dotenv/config server.js\"",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
