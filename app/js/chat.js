@@ -25,7 +25,7 @@ const login = () => {
 	let password = $('#login_pass').val();
 	$.ajax({
 		type: "POST",
-		url: "http://localhost:8082/login",
+		url: "/login",
 		data: JSON.stringify({
 			"username": username,
 			"password": password
@@ -70,7 +70,7 @@ const searchGroup = () => {
 	const groupName = $('#groupName').val().trim();
 	$.ajax({
 		method: 'GET',
-		url: 'http://localhost:8082/get-group',
+		url: '/get-group',
 		data: {
 			groupName
 		},
@@ -108,10 +108,22 @@ const likeMessage = (message_id) => {
 	socket.emit('likemessage', {
 		message_id
 	}, (err, data) => {
+		if (err) {
+			console.log(err);
+			return;
+		}
+	});
+};
+
+const deleteMessage = (message_id) => {
+	socket.emit('deletemessage', {
+		message_id
+	}, (err, data) => {
 		if(err) {
 			console.log(err);
 			return;
 		}
+		console.log(data);
 	});
 };
 
@@ -151,7 +163,7 @@ const pushMyMessage = (chatWidowId, fromUser, message, message_id = null, likeSt
 								<span onclick="setMessageParams('${'edit'}', '${message_id}')" style="font-size: 10px">(edit)</span>
 								<span onclick="likeMessage('${message_id}')" style="font-size: 10px">${likeStatus ? '(unlike)' : '(like)'}</span>
 								<span onclick="setMessageParams('${'reply'}', '${message_id}')" style="font-size: 10px">(reply)</span>
-								<span onclick="delete('${message_id}')" style="font-size: 10px">(delete)</span>
+								<span onclick="deleteMessage('${message_id}')" style="font-size: 10px">(delete)</span>
             </div>
         </div>
   `);
@@ -201,20 +213,29 @@ const sendMessage = (room, to_id, message_id = null) => {
 				from_id: loggedInUser ? loggedInUser.user_id : null,
 				to_id,
 				message: encryptedMessage,
-				message_id
+				message_id: localStorage.getItem('message_id')
 			}, (err, msg) => {
 				if (err) {
 					console.log(err);
 					return;
 				}
-				console.log('message sent: ', msg);
-				const { message_text } = msg;
-				const rabbitEnc = CryptoJS.AES.decrypt(message_text, k1).toString(CryptoJS.enc.Utf8);
-				const decryptedMessage = CryptoJS.Rabbit.decrypt(rabbitEnc, k2).toString(CryptoJS.enc.Utf8);
-				console.log('decrypted message: ', decryptedMessage);
-				$(`#${msg.message_id}`).text(decryptedMessage);
-				localStorage.removeItem('message_id');
-				localStorage.setItem('sendType', 'message');
+				console.log(msg);
+			});
+		}
+
+		if(type === 'reply') {
+			socket.emit('replymessage', {
+				from_id: loggedInUser ? loggedInUser.user_id : null,
+				to_id,
+				message: encryptedMessage,
+				room_id: room,
+				message_id: localStorage.getItem('message_id')
+			}, (err, data) => {
+				if(err) {
+					console.log(err);
+					return;
+				}
+				console.log(data);
 			});
 		}
 	});
@@ -488,6 +509,8 @@ const createRoom = (userId, userUsername, peerId) => {
 		openChatWindow(responseData.room_id, userDetails);
 	});
 };
+
+
 socket.on('updateUserList', function (userList) {
 	let loggedInUser = JSON.parse(sessionStorage.getItem('user'));
 	$('#user-list').html('<ul></ul>');
@@ -503,6 +526,8 @@ socket.on('invite', function (data) {
 	console.log('228: ', data);
 	socket.emit("joinRoom", data);
 });
+
+
 socket.on('message', function (msg) {
 	console.log('onMessageSocket: ', {
 		msg
@@ -525,17 +550,39 @@ socket.on('message', function (msg) {
 	}
 });
 
+socket.on('editmessage', (msg) => {
+	socket.emit('getenckeys', {}, (err, data) => {
+		if(err) {
+			console.log(err);
+			return;
+		}
+		const { k1, k2 } = data;
+		console.log('message sent: ', msg);
+		const { message_text } = msg;
+		const rabbitEnc = CryptoJS.AES.decrypt(message_text, k1).toString(CryptoJS.enc.Utf8);
+		const decryptedMessage = CryptoJS.Rabbit.decrypt(rabbitEnc, k2).toString(CryptoJS.enc.Utf8);
+		console.log('decrypted message: ', decryptedMessage);
+		$(`#${msg.message_id}`).text(decryptedMessage);
+		localStorage.removeItem('message_id');
+		localStorage.setItem('sendType', 'message');
+	})
+});
+
 socket.on('likemessage', (data) => {
 	const { likeStatus, message_id } = data;
 	const messageParentEl = document.getElementById(message_id).parentElement;
-	for(let el of messageParentEl.children) {
+	for (let el of messageParentEl.children) {
 		console.log(el.innerHTML);
-		if(el.innerHTML === '(like)' || el.innerHTML === '(unlike)') {
+		if (el.innerHTML === '(like)' || el.innerHTML === '(unlike)') {
 			console.log(likeStatus);
 			el.innerHTML = likeStatus ? '(unlike)' : '(like)';
 			break;
 		}
 	}
+});
+
+socket.on('deletemessage', (data) => {
+	console.log('message deleted: ', data);
 });
 
 // group socket

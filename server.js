@@ -498,15 +498,9 @@ io.on('connection', socket => {
           if (new_message) {
             // send back encrypted message
             // @ts-ignore
-            const randomObject = {
-              name: 'Akan',
-              age: 21
-            };
-            delete randomObject.age;
             const result = { ...new_message._doc };
             delete result.from_id._doc.password;
             delete result.to_id._doc.password;
-            console.log(result.from_id, randomObject);
             const finalResult = {
               message_id: result.message_id,
               from: result.from_id,
@@ -534,8 +528,6 @@ io.on('connection', socket => {
     async (data, cb) => {
       console.log('edit data: ', data);
       const { message_id, to_id, message, from_id } = data;
-      const messageIsEncrypted = CryptoJs.AES.decrypt(message, process.env.AES_CRYPTO_SECRET);
-      console.log(messageIsEncrypted.toString(CryptoJs.enc.Utf8));
 
       if (!message_id || !to_id || !message || !from_id) {
         cb({ error: 'one or more params missing' }, false);
@@ -557,6 +549,7 @@ io.on('connection', socket => {
         return;
       }
       if (userCreatedRoom) {
+        const userSocket = await Socket.findOne({ user_id: user._id });
         const recipientSocket = await Socket.findOne({ user_id: recipientUser._id });
         if (recipientSocket) {
           const messageUpdate = await Message.findOneAndUpdate({ message_id }, { message_text: message, edited: true });
@@ -565,8 +558,8 @@ io.on('connection', socket => {
           if (messageUpdate) {
             messageUpdate.edited = true;
             messageUpdate.message_text = message;
-            cb(null, messageUpdate);
-            socket.broadcast.to(recipientSocket.socket).emit('editmessage', { messageUpdate: messageUpdate });
+            io.to(userSocket.socket).emit('editmessage', messageUpdate);
+            io.to(recipientSocket.socket).emit('editmessage', messageUpdate);
             return;
           }
         }
@@ -636,35 +629,88 @@ io.on('connection', socket => {
         return;
       }
       const deletedMessage = await Message.findOneAndDelete({ message_id });
+      console.log(deletedMessage);
+      const userSocket = await Socket.findOne({ user_id: deletedMessage.from_id });
+      const recipientSocket = await Socket.findOne({ user_id: deletedMessage.to_id });
       if (!deletedMessage) {
         cb({ error: 'invalid message id' }, false);
         return;
       }
-      cb(false, { deleteStatus: true });
+      if(!userSocket || !recipientSocket) {
+        cb({ error: 'cannot get user or recipient socket' }, false);
+        return;
+      }
+      io.to(userSocket.socket).emit('deletemessage', { deleteStatus: true });
+      io.to(recipientSocket.socket).emit('deletemessage', { deleteStatus: true });
       return;
     });
 
+  /**
+   * socket function to handle message reply
+   */
   socket.on('replymessage',
     /**
      * 
-     * @param {{message_id: string}} data 
+     * @param {{message_id: string, message: string, from_id: string, to_id: string, room_id: string}} data 
      * @param {(error: *, data: *) => void} cb 
      */
     async (data, cb) => {
-      const { message_id } = data;
-      if (!message_id) {
+      const { message_id, from_id, message, to_id, room_id } = data;
+      if (!message_id || !from_id || !message || !to_id || !room_id) {
         cb({ error: 'missing message id' }, false);
         return;
       }
       try {
+        const user = await User.findOne({ user_id: from_id });
+        const recipientUser = await User.findOne({ user_id: to_id });
         const parentMessage = await Message.findOne({ message_id });
-        if (!parentMessage) {
-          cb({ error: 'invalid message id' }, false);
+        const room = await PrivateRoom.findOne({ room_id });
+        if (!parentMessage || !user || !recipientUser) {
+          cb({ error: 'invalid from_id or to_id or message_id' }, false);
           return;
         }
 
-      } catch (error) {
+        // find users socket ids
+        const userSocket = await Socket.findById(user.socket);
+        const recipientSocket = await Socket.findById(recipientUser.socket);
+        if (!userSocket && !recipientSocket) {
+          cb({ error: 'unable to find users socket ids' }, false);
+          return;
+        }
+        // create reply
+        const reply_data = {
+          message_id: uuid.v4(),
+          message_text: message,
+          from_id: user._id,
+          to_id: recipientUser._id,
+          room_id: room._id,
+          replied: true,
+          parent_id: parentMessage._id
+        };
 
+        const reply = await (await Message.create(reply_data)).execPopulate({
+          path: 'room_id from_id to_id parent_id'
+        });
+        if (reply) {
+          const result = { ...reply._doc };
+          console.log(result);
+          delete result.from_id._doc.password;
+          delete result.to_id._doc.password;
+          const finalResult = {
+            message_id: result.message_id,
+            from: result.from_id,
+            to: result.to_id,
+            room: result.room_id.room_id,
+            message_text: result.message_text,
+            parent_message: result.parent_id
+          };
+          io.to(userSocket.socket).emit('message', finalResult);
+          io.to(recipientSocket.socket).emit('message', finalResult);
+          return;
+        }
+      } catch (error) {
+        console.log('Error: ', error);
+        cb({ error: 'an error occured' }, false);
       }
     });
 
