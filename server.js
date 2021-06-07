@@ -27,7 +27,8 @@ console.log(process.env.NODE_ENV);
 
 const peerServer = PeerServer({
   path: '/',
-  port: 9000
+  port: 9000,
+  proxied: true
 });
 
 app.set('view engine', 'ejs');
