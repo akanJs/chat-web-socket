@@ -24,6 +24,7 @@ const PORT = process.env.PORT || 8082;
 
 console.log(process.env.NODE_ENV);
 
+app.set('view engine', 'ejs');
 app.use(express.static('app'));
 app.use('/node_modules', express.static(path.join(__dirname, 'node_modules',)));
 app.use(express.json());
@@ -66,6 +67,14 @@ mongoose.connect(process.env.NODE_ENV === 'production' ? `mongodb+srv://${proces
   console.log('db connected successfully');
 }).catch((err) => {
   console.log('Error connecting to db: ', err);
+});
+
+app.get('/', (req, res) => {
+  res.redirect('/chat');
+});
+
+app.get('/chat', (req, res) => {
+  return res.render('index');
 });
 
 app.post('/register', async (req, res) => {
