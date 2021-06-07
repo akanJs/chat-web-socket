@@ -515,7 +515,7 @@ socket.on('updateUserList', function (userList) {
 	let loggedInUser = JSON.parse(sessionStorage.getItem('user'));
 	$('#user-list').html('<ul></ul>');
 	userList.forEach(item => {
-		if (loggedInUser.user_id != item.user_id) {
+		if (loggedInUser.user_id != item ? item.user_id : null) {
 			$('#user-list ul').append(`<li data-id="${item.user_id}" onclick="createRoom('${item.user_id}', '${item.username}', '${item.peerId}')">${item.user_full_name}</li>`);
 		}
 	});
