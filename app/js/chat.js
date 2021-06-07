@@ -119,7 +119,7 @@ const deleteMessage = (message_id) => {
 	socket.emit('deletemessage', {
 		message_id
 	}, (err, data) => {
-		if (err) {
+		if(err) {
 			console.log(err);
 			return;
 		}
@@ -223,7 +223,7 @@ const sendMessage = (room, to_id, message_id = null) => {
 			});
 		}
 
-		if (type === 'reply') {
+		if(type === 'reply') {
 			socket.emit('replymessage', {
 				from_id: loggedInUser ? loggedInUser.user_id : null,
 				to_id,
@@ -231,7 +231,7 @@ const sendMessage = (room, to_id, message_id = null) => {
 				room_id: room,
 				message_id: localStorage.getItem('message_id')
 			}, (err, data) => {
-				if (err) {
+				if(err) {
 					console.log(err);
 					return;
 				}
@@ -552,7 +552,7 @@ socket.on('message', function (msg) {
 
 socket.on('editmessage', (msg) => {
 	socket.emit('getenckeys', {}, (err, data) => {
-		if (err) {
+		if(err) {
 			console.log(err);
 			return;
 		}
@@ -705,15 +705,15 @@ socket.on('notify', function (data) {
 const peers = {};
 let chunck = [];
 
-// async function getStream(type) {
-// 	console.log(type);
-// 	if (type === 'video') {
-// 		const stream = await window.navigator.getUserMedia({ video: true, audio: true });
-// 		return stream;
-// 	}
-// 	const stream = await window.navigator.mediaDevices.getUserMedia({ video: false, audio: true });
-// 	return stream;
-// }
+async function getStream(type) {
+	console.log(type);
+	if (type === 'video') {
+		const stream = await window.navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+		return stream;
+	}
+	const stream = await window.navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+	return stream;
+}
 
 const videoGrid = document.getElementById('video-grid');
 
@@ -742,23 +742,17 @@ function openIncomingCallWindow(roomId, user, type) {
 	$('#acceptCallBtn').on('click', async (e) => {
 		e.preventDefault();
 		if (type === 'video') {
-			navigator.getUserMedia({ video: true, audio: true }, (stream) => {
-				const myVideo = document.createElement('video');
-				addVideoStream(myVideo, stream);
-				$('#incomingCallModal').modal('hide');
-				socket.emit('call answered', { roomId, type });
-				return;
-			}, (err) => {
-				console.log('could not start video call: ', err);
-			});
-		}
-		navigator.getUserMedia({ video: false, audio: true }, (stream) => {
-			converToAudio(stream);
-			$('#incomingCallModal').modal('toggle');
+			const stream = await getStream(type);
+			const myVideo = document.createElement('video');
+			addVideoStream(myVideo, stream);
+			$('#incomingCallModal').modal('hide');
 			socket.emit('call answered', { roomId, type });
-		}, (err) => {
-			console.log('could not start audio call: ', err);
-		});
+			return;
+		}
+		const stream = await getStream(type);
+		converToAudio(stream);
+		$('#incomingCallModal').modal('toggle');
+		socket.emit('call answered', { roomId, type });
 	});
 
 	$('#declineCallBtn').on('click', (e) => {
@@ -777,36 +771,22 @@ socket.on('incoming call', (data) => {
 socket.on('call answered', async (data) => {
 	console.log('call has been answered');
 	const userPeerId = localStorage.getItem('with_user_peer_id');
-	if (data.type === 'video') {
-		navigator.getUserMedia({ video: true, audio: true }, (stream) => {
-			localStorage.setItem('callType', data.type);
-			connectToNewUser(userPeerId, stream, data.type);
-		}, (err) => {
-			console.log('could not start video call: ', err);
-		});
-	}
-	navigator.getUserMedia({ video: false, audio: true }, (stream) => {
-		localStorage.setItem('callType', data.type);
-		connectToNewUser(userPeerId, stream, data.type);
-	}, (err) => {
-		console.log('could not start audio call: ', err);
-	});
+	const stream = await getStream(data.type);
+	localStorage.setItem('callType', data.type);
+	connectToNewUser(userPeerId, stream, data.type);
 });
 
 myPeer.on('call', async call => {
-	navigator.getUserMedia(localStorage.getItem('callType') === 'video' ? { video: true, audio: true } : { video: false, audio: true }, (stream) => {
-		call.answer(stream);
-		call.on('stream', mediaStream => {
-			if (localStorage.getItem('callType') === 'video') {
-				console.log('from on call listener function: ', mediaStream);
-				const video = document.createElement('video');
-				addVideoStream(video, mediaStream);
-				return;
-			}
-			converToAudio(mediaStream);
-		});
-	}, (err) => {
-		console.log('could not getStream: err', err);
+	const stream = await getStream(localStorage.getItem('callType'));
+	call.answer(stream);
+	call.on('stream', mediaStream => {
+		if (localStorage.getItem('callType') === 'video') {
+			console.log('from on call listener function: ', mediaStream);
+			const video = document.createElement('video');
+			addVideoStream(video, mediaStream);
+			return;
+		}
+		converToAudio(mediaStream);
 	});
 });
 
@@ -814,23 +794,29 @@ async function startCall(roomId, peerId, type) {
 	const loggedInUser = JSON.parse(sessionStorage.getItem('user'));
 	if (type === 'video') {
 
-		navigator.getUserMedia({ video: true, audio: true }, (stream) => {
-			const call = myPeer.call(peerId, stream);
-			call.on('stream', (remoteStream) => {
-				console.log('new video call');
-				const video = document.createElement('video');
-				addVideoStream(video, remoteStream);
-				socket.emit('call user', { roomId, user: loggedInUser, type });
-				return;
-			});
-		}, (err) => {
-			console.log('could not getStream: err', err);
-		});
-	}
-	navigator.getUserMedia({ audio: true, video: false }, (stream) => {
-		converToAudio(stream);
+		// navigator.getUserMedia({ video: true, audio: true }, (stream) => {
+		//     const call = myPeer.call(peerId, stream);
+		//     call.on('stream', (remoteStream) => {
+		//         alert('new video call');
+		//         const video = document.createElement('video');
+		//         addVideoStream(video, remoteStream);
+		//     });
+		// }, (err) => {
+		//     console.log('could not getStream');
+		// });
+		console.log('type is video');
+		const myVideo = document.createElement('video');
+		myVideo.muted = false;
+		const stream = await getStream(type);
+		console.log(stream);
+		// emit new call to user
+		addVideoStream(myVideo, stream);
 		socket.emit('call user', { roomId, user: loggedInUser, type });
-	}, (err) => console.log('could not get audio stream: ', err));
+		return;
+	}
+	const stream = await getStream(type);
+	converToAudio(stream);
+	socket.emit('call user', { roomId, user: loggedInUser, type });
 }
 
 function addVideoStream(video, stream) {
