@@ -8,7 +8,7 @@ localStorage.setItem('sendType', 'message');
 
 const myPeer = new Peer(undefined, {
 	host: '/',
-	port: '8080'
+	port: 9000
 });
 
 console.log('peer id: ', myPeer.id);

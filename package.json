@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "bin": "",
-    "start": "concurrently \"peerjs --port 8080\" \"nodemon -r dotenv/config server.js\"",
+    "start": "nodemon -r dotenv/config server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
