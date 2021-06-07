@@ -10,7 +10,6 @@ const io = new Server(server, {
 const mongoose = require('mongoose');
 const uuid = require('uuid');
 const moment = require('moment');
-const { PeerServer } = require('peer');
 const { User } = require('./models/users.model');
 const { Group } = require('./models/group.model');
 const { Participant } = require('./models/participant.model');
@@ -24,12 +23,6 @@ const CryptoJs = require('crypto-js');
 const PORT = process.env.PORT || 8082;
 
 console.log(process.env.NODE_ENV);
-
-const peerServer = PeerServer({
-  path: '/',
-  port: 9000,
-  proxied: true
-});
 
 app.use(express.static('app'));
 app.use('/node_modules', express.static(path.join(__dirname, 'node_modules',)));
