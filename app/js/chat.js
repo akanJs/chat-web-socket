@@ -708,10 +708,10 @@ let chunck = [];
 async function getStream(type) {
 	console.log(type);
 	if (type === 'video') {
-		const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+		const stream = await window.navigator.mediaDevices.getUserMedia({ video: true, audio: true });
 		return stream;
 	}
-	const stream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
+	const stream = await window.navigator.mediaDevices.getUserMedia({ video: false, audio: true });
 	return stream;
 }
 
