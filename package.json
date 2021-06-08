@@ -36,6 +36,7 @@
     "random": "^3.0.6",
     "socket.io": "^4.0.1",
     "socket.io-stream": "^0.9.1",
+    "timeago.js": "^4.0.2",
     "uuid": "^8.3.2",
     "winston": "^3.3.3"
   }

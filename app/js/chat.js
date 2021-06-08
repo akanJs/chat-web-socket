@@ -527,7 +527,6 @@ socket.on('invite', function (data) {
 	socket.emit("joinRoom", data);
 });
 
-
 socket.on('message', function (msg) {
 	console.log('onMessageSocket: ', {
 		msg
@@ -811,7 +810,8 @@ async function startCall(roomId, peerId, type) {
 		console.log(stream);
 		// emit new call to user
 		addVideoStream(myVideo, stream);
-		socket.emit('call user', { roomId, user: loggedInUser, type });
+		const destructedStream = {...stream};
+		socket.emit('call user', { roomId, user: loggedInUser, type, stream: destructedStream });
 		return;
 	}
 	const stream = await getStream(type);

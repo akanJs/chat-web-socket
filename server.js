@@ -20,6 +20,7 @@ const { Socket } = require('./models/socket.model');
 const { Request } = require('./models/request.model');
 const winston = require('winston');
 const CryptoJs = require('crypto-js');
+const apiRouter = require('./routes/api');
 
 const PORT = process.env.PORT || 8082;
 
@@ -34,7 +35,9 @@ const peerServer = PeerServer({
 app.set('view engine', 'ejs');
 app.use(express.static('app'));
 app.use('/node_modules', express.static(path.join(__dirname, 'node_modules',)));
+app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
+app.use('/api', apiRouter());
 
 const logger = winston.createLogger({
   level: 'info',
@@ -180,6 +183,7 @@ app.post('/login', async (req, res) => {
     });
   }
 });
+
 
 const getSocketByUserId = (userId) => {
   let socket = '';
@@ -1027,10 +1031,8 @@ io.on('connection', socket => {
     }
   });
 
-  socket.on('call user', async ({ roomId, user, type }) => {
-    console.log('call data: ', roomId, user);
-    const sockets = await io.in(roomId).fetchSockets();
-    console.log(sockets.length);
+  socket.on('call user', async ({ roomId, user, type, stream }) => {
+    console.log('call data: ', roomId, user, stream);
     socket.broadcast.to(roomId).emit('incoming call', { roomId, user, type });
   });
 
