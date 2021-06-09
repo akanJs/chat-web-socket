@@ -127,6 +127,7 @@ app.get('/get-group', async (req, res) => {
 
   try {
     const requestedGroup = await Group.find();
+    // @ts-ignore
     const groups = requestedGroup.filter((x) => x.group_name.toUpperCase().includes(groupName.toUpperCase()));
     if (requestedGroup) {
       return res.status(200).json({
@@ -182,6 +183,12 @@ app.post('/login', async (req, res) => {
       error: error.message
     });
   }
+});
+
+app.all('**', (req, res) => {
+  res.status(404).json({
+    error: 'not found'
+  });
 });
 
 
@@ -1007,7 +1014,7 @@ io.on('connection', socket => {
   socket.on('leaveGroup', async function (data, cb) {
     try {
       const group = await Group.findOne({ group_id: data.group_id });
-      const participant = await Participant.findOne({ group_id: group._id, participant: data.user_id }).populate('participant')
+      const participant = await Participant.findOne({ group_id: group._id, participant: data.user_id }).populate('participant');
 
       if (group && participant) {
         const deletedParticipant = await Participant.findByIdAndDelete(participant._id);

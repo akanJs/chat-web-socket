@@ -435,15 +435,27 @@ const routes = () => {
             error: 'could not find user or post'
           });
         }
+
+        // find seen record
+        const postHasBeenSeen = await Seen.findOne({ seen_by: user._id, post_id: post._id });
+        if(postHasBeenSeen) {
+          return res.status(200).json({
+            status: false,
+            message: 'post already marked as seen'
+          });
+        }
+
         // mark post as seen
         const markPostAsSeen = await Seen.create({
           seen_id: uuid.v4(),
           post_id: post._id,
           seen_by: user._id
         });
-        if(markPostAsSeen) { // mark successful
+        // update seen property in post object
+        const postUpdate = await Post.findByIdAndUpdate(post._id, { seen: true });
+        if(markPostAsSeen && postUpdate) { // mark successful
           return res.status(200).json({
-            status: true,
+            status: !postUpdate.seen,
             data: {
               message: 'marked as seen',
               seen_post: markPostAsSeen
