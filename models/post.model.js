@@ -36,6 +36,10 @@ const postSchema = new mongoose.Schema({
   seen: {
     type: Boolean,
     default: false
+  },
+  tags: {
+    type: [String],
+    required: true
   }
 });
 

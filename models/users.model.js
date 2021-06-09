@@ -39,6 +39,10 @@ const userSchema = new mongoose.Schema({
   socket: {
     type: Types.ObjectId,
     ref: 'Socket'
+  },
+  interests: {
+    type: [String],
+    required: true
   }
 });
 

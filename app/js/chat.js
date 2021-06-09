@@ -792,17 +792,6 @@ myPeer.on('call', async call => {
 async function startCall(roomId, peerId, type) {
 	const loggedInUser = JSON.parse(sessionStorage.getItem('user'));
 	if (type === 'video') {
-
-		// navigator.getUserMedia({ video: true, audio: true }, (stream) => {
-		//     const call = myPeer.call(peerId, stream);
-		//     call.on('stream', (remoteStream) => {
-		//         alert('new video call');
-		//         const video = document.createElement('video');
-		//         addVideoStream(video, remoteStream);
-		//     });
-		// }, (err) => {
-		//     console.log('could not getStream');
-		// });
 		console.log('type is video');
 		const myVideo = document.createElement('video');
 		myVideo.muted = false;

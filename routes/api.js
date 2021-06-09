@@ -1,7 +1,9 @@
 // jshint esversion:9
 const router = require('express').Router();
 const uuid = require('uuid');
-const { format } = require('timeago.js');
+const {
+  format
+} = require('timeago.js');
 const {
   Comment,
   Like
@@ -34,19 +36,19 @@ const getTimeAgo = (timestamp) => {
   // Get the time suffix
   const time = timeago.split(' ')[1];
   let allowedTime = null;
-  for(let x of allowedTimes) {
-    if(x === time) {
+  for (let x of allowedTimes) {
+    if (x === time) {
       allowedTime = time;
       break;
     }
   }
-  if(!allowedTime) {
+  if (!allowedTime) {
     return 'post expired';
   }
-  if(allowedTime === 'months') {
+  if (allowedTime === 'months') {
     // convert month length to number
     const monthNum = Number.parseInt(timeago.split(' ')[0]);
-    if(monthNum > 4) {
+    if (monthNum > 4) {
       return 'post expired';
     }
     return timeago;
@@ -60,7 +62,8 @@ const getTimeAgo = (timestamp) => {
  * @returns 
  */
 function shuffle(array) {
-  let currentIndex = array.length,  randomIndex;
+  let currentIndex = array.length,
+    randomIndex;
 
   // While there remain elements to shuffle...
   while (0 !== currentIndex) {
@@ -70,19 +73,21 @@ function shuffle(array) {
 
     // And swap it with the current element.
     [array[currentIndex], array[randomIndex]] = [
-      array[randomIndex], array[currentIndex]];
+      array[randomIndex], array[currentIndex]
+    ];
   }
 
   return array;
 }
 
 const routes = () => {
-
   router.route('/get-profile/:id')
     .get(async (req, res) => {
       // get user id from req params
-      const { id } = req.params;
-      if(!id) { // no id passed
+      const {
+        id
+      } = req.params;
+      if (!id) { // no id passed
         return res.status(400).json({
           status: false,
           error: 'missing profile id'
@@ -90,12 +95,20 @@ const routes = () => {
       }
       try {
         // find user
-        const user = await User.findOne({ user_id: id.trim() });
-        if(user) {
+        const user = await User.findOne({
+          user_id: id.trim()
+        });
+        if (user) {
           // find user's post followers and following
-          const user_posts = await Post.find({ posted_by: user._id });
-          const user_followers = await Following.find({ followed_user: user._id });
-          const user_following = await Following.find({ followed_by: user._id });
+          const user_posts = await Post.find({
+            posted_by: user._id
+          });
+          const user_followers = await Following.find({
+            followed_user: user._id
+          });
+          const user_following = await Following.find({
+            followed_by: user._id
+          });
           // send data
           return res.status(200).json({
             status: true,
@@ -131,51 +144,102 @@ const routes = () => {
         const user = await User.findOne({
           user_id
         });
-        if(!user_id) {
+        if (!user_id) {
           return res.status(400).json({
             status: false,
             error: 'missing user id'
           });
         }
+        // Create empty array to hold the timeline posts
+        const timelinePosts = [];
+
+        for (let interest of user.interests) {
+          const interest_posts = await Post.find({
+            tags: interest
+          });
+          for (let post of interest_posts) {
+            const postInTimeline = timelinePosts.find((x) => x.post_id === post.post_id);
+            if (!postInTimeline) {
+              const timeago = getTimeAgo(post.timestamp);
+              // post longer than four months
+              if (timeago && timeago === 'post expired') {
+                continue;
+              }
+              if (timeago && timeago != 'post expired') { // post is within four months
+                // check if the post has been seen by user
+                const postHasBeenSeen = await Seen.findOne({
+                  post_id: post._id,
+                  seen_by: user._id
+                });
+                // get the likes and comment and check if the length is greater than or equal 10
+                const postLikes = await Like.find({
+                  post_id: post._id
+                });
+                const postComments = await Comment.find({
+                  post_id: post._id
+                });
+                console.log('post performance: ', postLikes.length + postComments.length);
+                const postPerformance = postLikes.length + postComments.length;
+                if (!postHasBeenSeen && postPerformance >= 50) {
+                  // push post to timeline array
+                  console.log('post meets timeline criteria');
+                  timelinePosts.push(post);
+                }
+              }
+            }
+            continue;
+          }
+        }
         // find all user's followers
         const followings = await Following.find({
           followed_by: user._id
         });
-        // Create empty array to hold the timeline posts
-        const timelinePosts  = [];
+
         for (let following of followings) { // iterate through the user's following array
           // find the posts of each follower
           const following_posts = await Post.find({
             posted_by: following.followed_user
           }).populate('posted_by');
-          for(let post of following_posts) { // iterate through each followers posts
+          for (let post of following_posts) { // iterate through each followers posts
             // check how long the post has been created
             const timeago = getTimeAgo(post.timestamp);
-            console.log(timeago);
             // post longer than four months
-            if(timeago && timeago === 'post expired') {
+            if (timeago && timeago === 'post expired') {
               continue;
             }
-            if(timeago && timeago != 'post expired') { // post is within four months
+            if (timeago && timeago != 'post expired') { // post is within four months
               // check if the post has been seen by user
-              const postHasBeenSeen = await Seen.findOne({ post_id: post._id, seen_by: user._id });
-              // get the likes and comment and check if the length is greater than or equal 10
-              const postLikes = await Like.find({ post_id: post._id });
-              const postComments = await Comment.find({ post_id: post._id });
-              const postPerformance = postLikes.length + postComments.length;
-              if(!postHasBeenSeen && postPerformance >= 50) {
-                // push post to timeline array
-                console.log('post meets timeline criteria');
-                timelinePosts.push(post);
+              const postHasBeenSeen = await Seen.findOne({
+                post_id: post._id,
+                seen_by: user._id
+              });
+              if(!postHasBeenSeen) {
+                const postInTimeLine = timelinePosts.find((x) => x.post_id === post.post_id);
+                if(!postInTimeLine) {
+                  timelinePosts.push(post);
+                }
               }
+              // // get the likes and comment and check if the length is greater than or equal 10
+              // const postLikes = await Like.find({
+              //   post_id: post._id
+              // });
+              // const postComments = await Comment.find({
+              //   post_id: post._id
+              // });
+              // const postPerformance = postLikes.length + postComments.length;
+              // if (!postHasBeenSeen && postPerformance >= 50) {
+              //   // push post to timeline array
+              //   console.log('post meets timeline criteria');
+              //   timelinePosts.push(post);
+              // }
             }
           }
         }
 
-        console.log('timeline posts: ', timelinePosts);
+        // console.log('timeline posts: ', timelinePosts);
         // randomize timeline array
         const randomTimelinePosts = shuffle(timelinePosts);
-        console.log('randomized posts: ', randomTimelinePosts);
+        // console.log('randomized posts: ', randomTimelinePosts);
         // send randomaized array to user
         return res.status(200).json({
           status: true,
@@ -255,10 +319,13 @@ const routes = () => {
 
       try {
         likeData.like_id = uuid.v4();
-        const likeExist = await Like.findOne({ post_id: likeData.post_id, liked_by: likeData.liked_by });
-        if(likeExist) {
+        const likeExist = await Like.findOne({
+          post_id: likeData.post_id,
+          liked_by: likeData.liked_by
+        });
+        if (likeExist) {
           Like.findByIdAndDelete(likeExist._id, {}, (err, doc, resp) => {
-            if(err) {
+            if (err) {
               console.log(err);
               return res.status(422).json({
                 status: false,
@@ -312,7 +379,7 @@ const routes = () => {
       }
       try {
         const postExists = await Post.findById(commentData.post_id);
-        if(postExists) {
+        if (postExists) {
           commentData.comment_id = uuid.v4();
           console.log(commentData);
           const comment = await (await Comment.create(commentData)).execPopulate({
@@ -417,8 +484,11 @@ const routes = () => {
   router.route('/markasseen')
     .post(async (req, res) => {
       // get user id and post id from req body
-      const { user_id, post_id } = req.body;
-      if(!user_id || !post_id) {
+      const {
+        user_id,
+        post_id
+      } = req.body;
+      if (!user_id || !post_id) {
         return res.status(400).json({
           status: false,
           error: 'missing post parameter'
@@ -426,9 +496,13 @@ const routes = () => {
       }
       try {
         // find user and post
-        const user = await User.findOne({ user_id });
-        const post = await Post.findOne({ post_id });
-        if(!user || !post) {
+        const user = await User.findOne({
+          user_id
+        });
+        const post = await Post.findOne({
+          post_id
+        });
+        if (!user || !post) {
           // send error
           return res.status(422).json({
             status: false,
@@ -437,8 +511,11 @@ const routes = () => {
         }
 
         // find seen record
-        const postHasBeenSeen = await Seen.findOne({ seen_by: user._id, post_id: post._id });
-        if(postHasBeenSeen) {
+        const postHasBeenSeen = await Seen.findOne({
+          seen_by: user._id,
+          post_id: post._id
+        });
+        if (postHasBeenSeen) {
           return res.status(200).json({
             status: false,
             message: 'post already marked as seen'
@@ -452,8 +529,10 @@ const routes = () => {
           seen_by: user._id
         });
         // update seen property in post object
-        const postUpdate = await Post.findByIdAndUpdate(post._id, { seen: true });
-        if(markPostAsSeen && postUpdate) { // mark successful
+        const postUpdate = await Post.findByIdAndUpdate(post._id, {
+          seen: true
+        });
+        if (markPostAsSeen && postUpdate) { // mark successful
           return res.status(200).json({
             status: !postUpdate.seen,
             data: {

@@ -35,7 +35,7 @@ const peerServer = PeerServer({
 app.set('view engine', 'ejs');
 app.use(express.static('app'));
 app.use('/node_modules', express.static(path.join(__dirname, 'node_modules',)));
-app.use(express.urlencoded({ extended: false }));
+app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use('/api', apiRouter());
 
