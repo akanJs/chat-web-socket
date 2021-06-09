@@ -163,7 +163,7 @@ const routes = () => {
               const postLikes = await Like.find({ post_id: post._id });
               const postComments = await Comment.find({ post_id: post._id });
               const postPerformance = postLikes.length + postComments.length;
-              if(!postHasBeenSeen && postPerformance >= 10) {
+              if(!postHasBeenSeen && postPerformance >= 50) {
                 // push post to timeline array
                 console.log('post meets timeline criteria');
                 timelinePosts.push(post);
