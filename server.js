@@ -18,9 +18,10 @@ const { GroupMessage, Message } = require('./models/message.model');
 const { PrivateRoom } = require('./models/privateRoom.model');
 const { Socket } = require('./models/socket.model');
 const { Request } = require('./models/request.model');
-const winston = require('winston');
+const logger = require('./functions/logger');
 const CryptoJs = require('crypto-js');
-const apiRouter = require('./routes/api');
+const timelineRouter = require('./routes/timeline-api');
+const promotionAPi = require('./routes/promotion-api');
 
 const PORT = process.env.PORT || 8082;
 
@@ -37,31 +38,8 @@ app.use(express.static('app'));
 app.use('/node_modules', express.static(path.join(__dirname, 'node_modules',)));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
-app.use('/api', apiRouter());
-
-const logger = winston.createLogger({
-  level: 'info',
-  format: winston.format.json(),
-  defaultMeta: { from: 'server' },
-  transports: [
-    //
-    // - Write all logs with level `error` and below to `error.log`
-    // - Write all logs with level `info` and below to `combined.log`
-    //
-    new winston.transports.File({ filename: 'error.log', level: 'error' }),
-    new winston.transports.File({ filename: 'combined.log' }),
-  ],
-});
-
-// If we're not in production then log to the `console` with the format:
-//  `${info.level}: ${info.message} JSON.stringify({ ...rest }) `;
-
-
-if (process.env.NODE_ENV !== 'production') {
-  logger.add(new winston.transports.Console({
-    format: winston.format.prettyPrint()
-  }));
-}
+app.use('/api', timelineRouter());
+app.use('/promotion', promotionAPi());
 
 let clientSocketIds = [];
 let connectedUsers = [];

@@ -20,6 +20,8 @@ const {
 const {
   User
 } = require('../models/users.model');
+const { Promotion } = require('../models/promotion.model');
+const { Audience } = require('../models/audience.model');
 
 /**
  * 
@@ -152,11 +154,29 @@ const routes = () => {
         }
         // Create empty array to hold the timeline posts
         const timelinePosts = [];
+        // get all promotions
+        const expiredPromotions = await Promotion.find({ timestamp: { $gte: Date.now() } }).populate('audience');
+        for(let promotion of expiredPromotions) {
+          if(!promotion.expired) {
+            const expirePromotion = await Promotion.findByIdAndUpdate(promotion._id, { expired: true });
+            console.log('marked promotion as expired', expirePromotion);
+          }
+        }
 
-        for (let interest of user.interests) {
-          const interest_posts = await Post.find({
-            tags: interest
-          });
+        const allPromotions = await Promotion.find({ expired: false }).populate('audience');
+
+        for (let interest of user.interests) { // iterate over user's interests
+          const interest_posts = await Post.find({ tags: interest }); // find post related to current interest
+          const promotions = allPromotions.filter((x) => x.audience.interests.includes(interest));
+          if (promotions) {
+            for (let promotion of promotions) {
+              const promotionPost = await Post.findById(promotion.post);
+              const postInTimeLine = timelinePosts.find((x) => x.post_id === promotionPost.post_id);
+              if (!postInTimeLine) {
+                timelinePosts.push(promotionPost);
+              }
+            }
+          }
           for (let post of interest_posts) {
             const postInTimeline = timelinePosts.find((x) => x.post_id === post.post_id);
             if (!postInTimeline) {
@@ -213,9 +233,9 @@ const routes = () => {
                 post_id: post._id,
                 seen_by: user._id
               });
-              if(!postHasBeenSeen) {
+              if (!postHasBeenSeen) {
                 const postInTimeLine = timelinePosts.find((x) => x.post_id === post.post_id);
-                if(!postInTimeLine) {
+                if (!postInTimeLine) {
                   timelinePosts.push(post);
                 }
               }

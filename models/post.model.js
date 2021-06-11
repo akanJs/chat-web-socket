@@ -40,6 +40,10 @@ const postSchema = new mongoose.Schema({
   tags: {
     type: [String],
     required: true
+  },
+  promoted: {
+    type: Boolean,
+    default: false
   }
 });
 
