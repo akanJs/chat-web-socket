@@ -46,9 +46,13 @@ const promotionSchema = new Schema({
     type: Number,
     required: true
   },
+  end_timestamp: {
+    type: Number,
+    required: true
+  },
   expired: {
     type: Boolean,
-    expired: false
+    default: false
   }
 });
 

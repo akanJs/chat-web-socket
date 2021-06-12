@@ -155,11 +155,14 @@ const routes = () => {
         // Create empty array to hold the timeline posts
         const timelinePosts = [];
         // get all promotions
-        const expiredPromotions = await Promotion.find({ timestamp: { $gte: Date.now() } }).populate('audience');
-        for(let promotion of expiredPromotions) {
-          if(!promotion.expired) {
-            const expirePromotion = await Promotion.findByIdAndUpdate(promotion._id, { expired: true });
-            console.log('marked promotion as expired', expirePromotion);
+        const expiredPromotions = await Promotion.find({ end_timestamp: { $lte: new Date().getTime() } }).populate('audience');
+        console.log('expired promotions: ',expiredPromotions);
+        if(expiredPromotions && expiredPromotions.length !== 0) {
+          for(let promotion of expiredPromotions) {
+            if(!promotion.expired) {
+              const expirePromotion = await Promotion.findByIdAndUpdate(promotion._id, { expired: true });
+              console.log('marked promotion as expired', expirePromotion);
+            }
           }
         }
 
@@ -168,6 +171,8 @@ const routes = () => {
         for (let interest of user.interests) { // iterate over user's interests
           const interest_posts = await Post.find({ tags: interest }); // find post related to current interest
           const promotions = allPromotions.filter((x) => x.audience.interests.includes(interest));
+          console.log('current interest: ',interest);
+          console.log('promotion: ', promotions);
           if (promotions) {
             for (let promotion of promotions) {
               const promotionPost = await Post.findById(promotion.post);
@@ -200,7 +205,7 @@ const routes = () => {
                 });
                 console.log('post performance: ', postLikes.length + postComments.length);
                 const postPerformance = postLikes.length + postComments.length;
-                if (!postHasBeenSeen && postPerformance >= 50) {
+                if (!postHasBeenSeen && postPerformance >= 10) {
                   // push post to timeline array
                   console.log('post meets timeline criteria');
                   timelinePosts.push(post);

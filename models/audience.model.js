@@ -13,6 +13,11 @@ const audienceSchema = new Schema({
     required: true,
     ref: 'User'
   },
+  age_range: {
+    type: String,
+    require: true,
+    max: 7
+  },
   name: {
     type: String,
     required: true,

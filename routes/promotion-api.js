@@ -45,6 +45,26 @@ const goalValidator = (goal_type) => {
 
 /**
  * 
+ * @param {string} age_range 
+ */
+ const validateAgeRange = (age_range) => {
+  const rangeSplit = age_range.split('-');
+  console.log(rangeSplit);
+  if(rangeSplit.length !== 2) {
+    return false;
+  }
+  if(Number.parseInt(rangeSplit[1]) < Number.parseInt(rangeSplit[0])) {
+    return false;
+  }
+  const minAge = rangeSplit[0];
+  const maxAge = rangeSplit[1];
+  const regEx = /^(?:1[01][0-9]|1[7-9]|[2-9][0-9])$/;
+  if(!regEx.test(minAge) || !regEx.test(maxAge)) return false;
+  return true;
+};
+
+/**
+ * 
  * @param {number} year 
  * @returns 
  */
@@ -200,6 +220,7 @@ const routes = () => {
         budget.duration = Number.parseInt(budget.duration);
         budget.total_amount = budget.amount * budget.duration;
         budget.budget_id = uuid.v4();
+        budget.duration_type = budget.duration_type.toLowerCase();
         const new_budget = await Budget.create({ ...budget });
         if(!new_budget) {
           return res.status(422).json({
@@ -217,7 +238,7 @@ const routes = () => {
             error: 'could not create goal'
           });
         }
-        const promotion = await Promotion.create({
+        const promotion = await (await Promotion.create({
           promotion_id: uuid.v4(),
           goal: new_goal._id,
           audience: audience._id,
@@ -226,7 +247,10 @@ const routes = () => {
           user: user._id,
           start_date: new Date(),
           end_date: calculateEndDate(budget.duration),
-          timestamp: Date.now()
+          end_timestamp: calculateEndDate(budget.duration).getTime(),
+          timestamp: new Date().getTime()
+        })).execPopulate({
+          path: 'audience goal budget post user'
         });
         if(!promotion) {
           return res.status(422).json({
@@ -235,9 +259,45 @@ const routes = () => {
           });
         }
         const postUpdate = await Post.findByIdAndUpdate(post._id, { promoted: true });
+        const finalResult = {
+          goal: {
+            id: promotion.goal.goal_id,
+            type: promotion.goal.goal_type,
+            url: promotion.goal.url
+          },
+          audience: {
+            id: promotion.audience.audience_id,
+            audience_interest: promotion.audience.interests,
+            audience_gender: promotion.audience.gender,
+            audience_name: promotion.audience.name,
+            audience_country: promotion.audience.country,
+            audience_age_range: promotion.audience.age_range
+          },
+          budget: {
+            id: promotion.budget.budget_id,
+            budget_amount: promotion.budget.amount,
+            budget_duration: promotion.budget.duration,
+            duration_type: promotion.budget.duration_type,
+            total_amount: promotion.budget.total_amount
+          },
+          promoted_post: {
+            id: promotion.post.post_id,
+            type: promotion.post.post_type,
+            description: promotion.post.post_description,
+            url: promotion.post.post_url
+          },
+          user: {
+            id: user.user_id,
+            name: user.user_full_name,
+            username: user.username,
+            profile_pic: user.user_image,
+          },
+          start_date: promotion.start_date,
+          end_date: promotion.end_date
+        };
         return res.status(201).json({
           status: true,
-          data: promotion
+          data: finalResult
         });
       } catch (error) {
         logger.error(error);
@@ -318,6 +378,7 @@ const routes = () => {
     .post(async (req, res) => {
       const {
         name,
+        age_range,
         country,
         interests,
         gender,
@@ -333,12 +394,14 @@ const routes = () => {
       }
 
       // validate data type
-      if (typeof name !== 'string' || typeof country !== 'string' || typeof interests !== 'object' || typeof gender !== 'string' || typeof user_id !== 'string') {
+      if (typeof name !== 'string' || typeof age_range !== 'string' || typeof country !== 'string' || typeof interests !== 'object' || typeof gender !== 'string' || typeof user_id !== 'string') {
         return res.status(400).json({
           status: false,
           error: 'invalid data type'
         });
       }
+
+      if(!validateAgeRange(age_range)) return res.status(400).json({ status: false, error: 'invalid age range' });
 
       try {
         // find user
@@ -379,6 +442,51 @@ const routes = () => {
           status: false,
           error: 'an error occured'
         });
+      }
+    });
+
+  router.route('/audience/edit')
+    .put(async (req, res) => {
+      const {
+        audience_id,
+        update,
+      } = req.body;
+
+      if(!audience_id || !update) {
+        return res.status(400).json({
+          status: false,
+          error: 'missing audience_id or update'
+        });
+      }
+
+      if(!update.name && !update.gender && !update.interests && !update.country && !update.age_range) {
+        return res.status(400).json({
+          status: false,
+          error: 'missing update parameter'
+        });
+      }
+
+      if(update.age_range) {
+        if(!validateAgeRange(update.age_range)) {
+          return res.status(400).json({ status: false, error: 'invalid age range' });
+        }
+      }
+
+      try {
+        const audience = await Audience.findOne({ audience_id });
+        if(!audience) return res.status(404).json({ status: false, error: 'no audience found' });
+        const audienceUpdate = await Audience.findByIdAndUpdate(audience._id, {...update});
+        if(!audienceUpdate) return res.status(422).json({ status: false, error: 'could not update audience' });
+        return res.status(204).json({
+          status: true,
+          data: {
+            audience_id,
+            ...update
+          }
+        });
+      } catch (error) {
+        logger.error(error);
+        return res.status(500).json({ status: false, error: 'an error occured' });
       }
     });
 
