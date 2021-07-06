@@ -3,8 +3,7 @@ const express = require('express');
 const path = require('path');
 const app = require('express')();
 const server = require('http').createServer(app);
-const { Server } = require('socket.io');
-const io = new Server(server, {
+const io = require('socket.io')(server, {
   allowEIO3: true
 });
 const mongoose = require('mongoose');
@@ -183,7 +182,8 @@ const getSocketByUserId = (userId) => {
 
 /* socket function starts */
 io.on('connection', socket => {
-  logger.info('conected');
+  console.log(socket.id);
+  // logger.info('conected');
   socket.emit('connected', { message: 'Hello' });
   socket.on('disconnect', async () => {
     logger.info("disconnected");
@@ -207,6 +207,7 @@ io.on('connection', socket => {
     // connectedUsers = connectedUsers.filter(item => item.user_id != user.user_id);
     // connectedUsers.push({ ...user, socketId: socket.id });
 
+    console.log('logged in user data: ',data);
     const userExists = await User.findById(data.user._id);
 
     if (userExists) {
@@ -513,7 +514,8 @@ io.on('connection', socket => {
               room: result.room_id.room_id,
               message_text: result.message_text
             };
-            io.to(recipientSocket.socket).emit('message', finalResult);
+            socket.broadcast.to(chatRoom.room_id).emit('message', finalResult);
+            // io.to(recipientSocket.socket).emit('message', finalResult);
             cb(null, new_message);
           }
         }
@@ -547,31 +549,42 @@ io.on('connection', socket => {
         return;
       }
       // find users room
-      const userCreatedRoom = await PrivateRoom.findOne({ user_id: user._id, with_user_id: recipientUser._id });
-      const userInvitedRoom = await PrivateRoom.findOne({ user_id: recipientUser._id, with_user_id: user._id });
-      if (!userCreatedRoom && !userInvitedRoom) {
+      const room = await PrivateRoom.findOne({
+        $and: [
+          {
+            $or: [
+              { user_id: user._id },
+              { user_id: recipientUser._id }
+            ]
+          },
+          {
+            $or: [
+              { with_user_id: user._id },
+              { with_user_id: recipientUser._id }
+            ]
+          }
+        ]
+      });
+      if (!room) {
         cb({ error: 'no such rooms' }, false);
         return;
       }
-      if (userCreatedRoom) {
-        const userSocket = await Socket.findOne({ user_id: user._id });
-        const recipientSocket = await Socket.findOne({ user_id: recipientUser._id });
-        if (recipientSocket) {
-          const messageUpdate = await Message.findOneAndUpdate({ message_id }, { message_text: message, edited: true });
-          console.log(messageUpdate);
-          // @ts-ignore
-          if (messageUpdate) {
-            messageUpdate.edited = true;
-            messageUpdate.message_text = message;
-            io.to(userSocket.socket).emit('editmessage', messageUpdate);
-            io.to(recipientSocket.socket).emit('editmessage', messageUpdate);
-            return;
-          }
+      const recipientSocket = await Socket.findOne({ user_id: recipientUser._id });
+      if (recipientSocket) {
+        const messageUpdate = await Message.findOneAndUpdate({ message_id }, { message_text: message, edited: true });
+        console.log(messageUpdate);
+        // @ts-ignore
+        if (messageUpdate) {
+          messageUpdate.edited = true;
+          messageUpdate.message_text = message;
+          cb(null, messageUpdate);
+          socket.broadcast.to(room.room_id).emit('editmessage', messageUpdate);
+          return;
         }
-        const error = new Error('recipient does not exist');
-        cb(error, false);
-        return;
       }
+      const error = new Error('recipient does not exist');
+      cb(error, false);
+      return;
     });
 
   /**
@@ -660,8 +673,8 @@ io.on('connection', socket => {
      * @param {(error: *, data: *) => void} cb 
      */
     async (data, cb) => {
-      const { message_id, from_id, message, to_id, room_id } = data;
-      if (!message_id || !from_id || !message || !to_id || !room_id) {
+      const { message_id, from_id, message, to_id } = data;
+      if (!message_id || !from_id || !message || !to_id) {
         cb({ error: 'missing message id' }, false);
         return;
       }
@@ -669,19 +682,27 @@ io.on('connection', socket => {
         const user = await User.findOne({ user_id: from_id });
         const recipientUser = await User.findOne({ user_id: to_id });
         const parentMessage = await Message.findOne({ message_id });
-        const room = await PrivateRoom.findOne({ room_id });
+        const room = await PrivateRoom.findOne({
+          $and: [
+            {
+              $or: [
+                { user_id: user._id },
+                { user_id: recipientUser._id }
+              ]
+            },
+            {
+              $or: [
+                { with_user_id: user._id },
+                { with_user_id: recipientUser._id }
+              ]
+            }
+          ]
+        });
         if (!parentMessage || !user || !recipientUser) {
           cb({ error: 'invalid from_id or to_id or message_id' }, false);
           return;
         }
 
-        // find users socket ids
-        const userSocket = await Socket.findById(user.socket);
-        const recipientSocket = await Socket.findById(recipientUser.socket);
-        if (!userSocket && !recipientSocket) {
-          cb({ error: 'unable to find users socket ids' }, false);
-          return;
-        }
         // create reply
         const reply_data = {
           message_id: uuid.v4(),
@@ -709,8 +730,8 @@ io.on('connection', socket => {
             message_text: result.message_text,
             parent_message: result.parent_id
           };
-          io.to(userSocket.socket).emit('message', finalResult);
-          io.to(recipientSocket.socket).emit('message', finalResult);
+          cb(null, finalResult);
+          socket.broadcast.to(room.room_id).emit('message', finalResult);
           return;
         }
       } catch (error) {

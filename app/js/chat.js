@@ -119,7 +119,7 @@ const deleteMessage = (message_id) => {
 	socket.emit('deletemessage', {
 		message_id
 	}, (err, data) => {
-		if(err) {
+		if (err) {
 			console.log(err);
 			return;
 		}
@@ -183,6 +183,7 @@ const sendMessage = (room, to_id, message_id = null) => {
 		}
 		// destructure keys
 		const { k1, k2 } = resp;
+		console.log(k1, k2);
 		const rabbitEnc = CryptoJS.Rabbit.encrypt(message, k2).toString();
 		const encryptedMessage = CryptoJS.AES.encrypt(rabbitEnc, k1).toString();
 		console.log(encryptedMessage);
@@ -219,11 +220,18 @@ const sendMessage = (room, to_id, message_id = null) => {
 					console.log(err);
 					return;
 				}
-				console.log(msg);
+				console.log('message sent: ', msg);
+				const { message_text } = msg;
+				const rabbitEnc = CryptoJS.AES.decrypt(message_text, k1).toString(CryptoJS.enc.Utf8);
+				const decryptedMessage = CryptoJS.Rabbit.decrypt(rabbitEnc, k2).toString(CryptoJS.enc.Utf8);
+				console.log('decrypted message: ', decryptedMessage);
+				$(`#${msg.message_id}`).text(decryptedMessage);
+				localStorage.removeItem('message_id');
+				localStorage.setItem('sendType', 'message');
 			});
 		}
 
-		if(type === 'reply') {
+		if (type === 'reply') {
 			socket.emit('replymessage', {
 				from_id: loggedInUser ? loggedInUser.user_id : null,
 				to_id,
@@ -231,11 +239,16 @@ const sendMessage = (room, to_id, message_id = null) => {
 				room_id: room,
 				message_id: localStorage.getItem('message_id')
 			}, (err, data) => {
-				if(err) {
+				if (err) {
 					console.log(err);
 					return;
 				}
-				console.log(data);
+				console.log('message sent: ', data);
+				const { message_text } = data;
+				const rabbitEnc = CryptoJS.AES.decrypt(message_text, k1).toString(CryptoJS.enc.Utf8);
+				const decryptedMessage = CryptoJS.Rabbit.decrypt(rabbitEnc, k2).toString(CryptoJS.enc.Utf8);
+				console.log('decrypted message: ', decryptedMessage);
+				pushMyMessage(room, loggedInUser, decryptedMessage, data.message_id);
 			});
 		}
 	});
@@ -551,7 +564,7 @@ socket.on('message', function (msg) {
 
 socket.on('editmessage', (msg) => {
 	socket.emit('getenckeys', {}, (err, data) => {
-		if(err) {
+		if (err) {
 			console.log(err);
 			return;
 		}
@@ -582,6 +595,7 @@ socket.on('likemessage', (data) => {
 
 socket.on('deletemessage', (data) => {
 	console.log('message deleted: ', data);
+	// implement delete logic
 });
 
 // group socket
@@ -716,6 +730,10 @@ async function getStream(type) {
 
 const videoGrid = document.getElementById('video-grid');
 
+socket.on('connected', (data) => {
+	console.log(data.message);
+})
+
 socket.on('user-connected', ({ with_user_peer_id }) => {
 	console.log('user connected');
 	localStorage.setItem('with_user_peer_id', with_user_peer_id);
@@ -799,7 +817,7 @@ async function startCall(roomId, peerId, type) {
 		console.log(stream);
 		// emit new call to user
 		addVideoStream(myVideo, stream);
-		const destructedStream = {...stream};
+		const destructedStream = { ...stream };
 		socket.emit('call user', { roomId, user: loggedInUser, type, stream: destructedStream });
 		return;
 	}
